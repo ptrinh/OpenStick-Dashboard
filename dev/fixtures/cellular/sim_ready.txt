@@ -1,0 +1,16 @@
+sim.dbus-path                                   : /org/freedesktop/ModemManager1/SIM/0
+sim.properties.active                           : yes
+sim.properties.imsi                             : 452041234567890
+sim.properties.iccid                            : 8984048000012345678
+sim.properties.operator-code                    : 45204
+sim.properties.operator-name                    : Viettel
+sim.properties.emergency-numbers.length         : 2
+sim.properties.emergency-numbers.value[1]       : 112
+sim.properties.emergency-numbers.value[2]       : 911
+sim.properties.preferred-networks.length        : 0
+sim.properties.sim-type                         : physical
+sim.properties.esim-status                      : --
+sim.properties.removability                     : removable
+sim.properties.gid1                             : --
+sim.properties.gid2                             : --
+sim.properties.eid                              : --

@@ -1,0 +1,1 @@
+{"outbounds": [{"type": "wireguard", "tag": "wg", "server": "198.51.100.4", "server_port": 51820, "private_key": "aPrivKeyBase64ShouldNeverLeak0000000000000=", "peer_public_key": "peerPubKeyIsNotSecretButHidden00000000000000=", "local_address": ["10.0.0.2/32"]}]}

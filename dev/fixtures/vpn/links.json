@@ -1,0 +1,13 @@
+{
+  "valid": "vless://0f1e2d3c-4b5a-6978-8a9b-0c1d2e3f4a5b@vpn.example.net:443?encryption=none&security=reality&sni=www.microsoft.com&fp=chrome&pbk=AbCdEfGhIjKlMnOpQrStUvWxYz0123456789-_AbCdE&sid=6ba85179e30d4fc2&flow=xtls-rprx-vision&type=tcp#SG%20home%20%F0%9F%87%B8%F0%9F%87%AC",
+  "missing_pbk": "vless://0f1e2d3c-4b5a-6978-8a9b-0c1d2e3f4a5b@vpn.example.net:443?security=reality&sni=www.microsoft.com&fp=chrome&sid=6ba85179e30d4fc2&flow=xtls-rprx-vision&type=tcp#x",
+  "ipv6": "vless://0f1e2d3c-4b5a-6978-8a9b-0c1d2e3f4a5b@[2001:db8::7]:8443?security=reality&sni=www.apple.com&pbk=AbCdEfGhIjKlMnOpQrStUvWxYz0123456789-_AbCdE&sid=&type=tcp",
+  "grpc": "vless://0f1e2d3c-4b5a-6978-8a9b-0c1d2e3f4a5b@203.0.113.9:443?security=reality&sni=www.apple.com&pbk=AbCdEfGhIjKlMnOpQrStUvWxYz0123456789-_AbCdE&sid=ab&type=grpc&serviceName=gsvc#%E6%97%85%E8%A1%8C",
+  "tls_not_reality": "vless://0f1e2d3c-4b5a-6978-8a9b-0c1d2e3f4a5b@vpn.example.net:443?security=tls&sni=vpn.example.net&type=ws",
+  "bad_uuid": "vless://not-a-uuid@vpn.example.net:443?security=reality&sni=a.com&pbk=AbCdEfGhIjKlMnOpQrStUvWxYz0123456789-_AbCdE",
+  "bad_port": "vless://0f1e2d3c-4b5a-6978-8a9b-0c1d2e3f4a5b@vpn.example.net:99999?security=reality&sni=a.com&pbk=AbCdEfGhIjKlMnOpQrStUvWxYz0123456789-_AbCdE",
+  "no_port": "vless://0f1e2d3c-4b5a-6978-8a9b-0c1d2e3f4a5b@vpn.example.net?security=reality&sni=a.com&pbk=AbCdEfGhIjKlMnOpQrStUvWxYz0123456789-_AbCdE",
+  "bad_sid": "vless://0f1e2d3c-4b5a-6978-8a9b-0c1d2e3f4a5b@vpn.example.net:443?security=reality&sni=a.com&pbk=AbCdEfGhIjKlMnOpQrStUvWxYz0123456789-_AbCdE&sid=xyz",
+  "shell_host": "vless://0f1e2d3c-4b5a-6978-8a9b-0c1d2e3f4a5b@a;rm%20-rf:443?security=reality&sni=a.com&pbk=AbCdEfGhIjKlMnOpQrStUvWxYz0123456789-_AbCdE",
+  "vision_grpc": "vless://0f1e2d3c-4b5a-6978-8a9b-0c1d2e3f4a5b@vpn.example.net:443?security=reality&sni=a.com&pbk=AbCdEfGhIjKlMnOpQrStUvWxYz0123456789-_AbCdE&type=grpc&flow=xtls-rprx-vision"
+}

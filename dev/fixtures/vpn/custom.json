@@ -1,0 +1,13 @@
+{
+  "log": {"level": "info"},
+  "inbounds": [{"type": "tun", "interface_name": "tun0", "address": ["172.19.0.1/30"], "auto_route": true}],
+  "outbounds": [
+    {"type": "hysteria2", "tag": "hy2", "server": "hy.example.org", "server_port": 8443, "password": "s3cr3t-hy2-pass",
+     "tls": {"enabled": true, "server_name": "hy.example.org"}},
+    {"type": "vless", "tag": "backup", "server": "vpn.example.net", "server_port": 443, "uuid": "0f1e2d3c-4b5a-6978-8a9b-0c1d2e3f4a5b",
+     "tls": {"enabled": true, "server_name": "www.microsoft.com", "reality": {"enabled": true, "public_key": "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789-_AbCdE", "short_id": "6ba85179e30d4fc2"}},
+     "transport": {"type": "grpc", "service_name": "gsvc"}},
+    {"type": "direct", "tag": "direct"}
+  ],
+  "route": {"final": "hy2"}
+}

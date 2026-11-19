@@ -1,0 +1,17 @@
+NOTE: This is only a simulation!
+      apt-get needs root privileges for real execution.
+Reading package lists...
+Building dependency tree...
+Reading state information...
+Calculating upgrade...
+The following packages have been kept back:
+  linux-image-arm64
+The following packages will be upgraded:
+  libc-bin libc6 tailscale
+3 upgraded, 0 newly installed, 0 to remove and 1 not upgraded.
+Inst libc6 [2.41-12] (2.41-12+deb13u1 Debian-Security:13/stable-security [arm64])
+Inst libc-bin [2.41-12] (2.41-12+deb13u1 Debian-Security:13/stable-security [arm64])
+Inst tailscale [1.90.6] (1.90.8 tailscale:trixie/trixie [arm64])
+Conf libc6 (2.41-12+deb13u1 Debian-Security:13/stable-security [arm64])
+Conf libc-bin (2.41-12+deb13u1 Debian-Security:13/stable-security [arm64])
+Conf tailscale (1.90.8 tailscale:trixie/trixie [arm64])

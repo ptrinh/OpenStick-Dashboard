@@ -4,6 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#000000">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-title" content="UZ801">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>UZ801</title>
 <style>
 :root{
@@ -382,6 +387,9 @@ function render(){
  ].join(''));
 
  const sms=s.sms||[];$('smscount').textContent=sms.length?sms.length:'';
+ // the "sms" LED blinks for unread SMS: seeing the list on a visible page counts as read
+ const newest=sms.find(m=>m.dir==='in');const nk=newest?newest.ts+'|'+newest.peer:'';
+ if(nk&&nk!==window._smsSeen&&document.visibilityState==='visible'&&(s.ui_modules||[]).includes('leds')){window._smsSeen=nk;post('leds-sms-seen').catch(()=>{})}
  set('sms',`<div class="list">
   <button class="tile item" data-focus data-act="compose" style="grid-template-columns:44px 1fr"><div class="ic" style="background:${G.blue}">${svg('send')}</div><div><b>${t('sendSms')}</b><small>${t('viaSim')}</small></div></button>
   ${sms.slice(0,8).map(m=>`<div class="item"><div class="ic">${svg(m.dir==='in'?'msg':m.dir==='out'?'send':'power')}</div><div><b>${esc(m.peer)}</b><small>${m.dir==='in'?t('inMsg'):m.dir==='out'?t('outMsg'):t('failMsg')} · ${esc(m.ts)}</small><p>${esc(m.text)}</p></div><span></span></div>`).join('')||`<div class="empty">${t('noSms')}</div>`}

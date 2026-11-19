@@ -1,0 +1,11 @@
+# One target per line: https://url | tcp:host:port | ping:host  (checked every 5 min over the current uplink)
+# my own header note
+
+https://google.com
+# DNS over 4G
+ping:1.1.1.1
+# home server SSH
+tcp:home.example.net:22
+HTTPS://Example.ORG/health
+ftp://bad.example.com
+# trailing note

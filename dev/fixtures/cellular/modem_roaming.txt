@@ -1,0 +1,57 @@
+modem.dbus-path                                 : /org/freedesktop/ModemManager1/Modem/0
+modem.generic.plugin                            : qcom-soc
+modem.generic.primary-port                      : qmi0
+modem.generic.manufacturer                      : QUALCOMM INCORPORATED
+modem.generic.model                             : 0
+modem.generic.own-numbers.length                : 1
+modem.generic.own-numbers.value[1]              : +84912345678
+modem.generic.unlock-required                   : none
+modem.generic.unlock-retries.length             : 4
+modem.generic.unlock-retries.value[1]           : sim-pin (3)
+modem.generic.unlock-retries.value[2]           : sim-puk (10)
+modem.generic.unlock-retries.value[3]           : sim-pin2 (3)
+modem.generic.unlock-retries.value[4]           : sim-puk2 (10)
+modem.generic.state                             : connected
+modem.generic.state-failed-reason               : --
+modem.generic.power-state                       : on
+modem.generic.access-technologies.length        : 1
+modem.generic.access-technologies.value[1]      : lte
+modem.generic.signal-quality.value              : 61
+modem.generic.signal-quality.recent             : yes
+modem.generic.supported-modes.length            : 7
+modem.generic.supported-modes.value[1]          : allowed: 2g; preferred: none
+modem.generic.supported-modes.value[2]          : allowed: 3g; preferred: none
+modem.generic.supported-modes.value[3]          : allowed: 4g; preferred: none
+modem.generic.supported-modes.value[4]          : allowed: 2g, 3g; preferred: 3g
+modem.generic.supported-modes.value[5]          : allowed: 3g, 4g; preferred: 4g
+modem.generic.supported-modes.value[6]          : allowed: 2g, 3g, 4g; preferred: 4g
+modem.generic.supported-modes.value[7]          : allowed: 2g, 3g, 4g; preferred: none
+modem.generic.current-modes                     : allowed: 2g, 3g, 4g; preferred: 4g
+modem.generic.supported-bands.length            : 3
+modem.generic.supported-bands.value[1]          : eutran-1
+modem.generic.supported-bands.value[2]          : eutran-3
+modem.generic.supported-bands.value[3]          : eutran-8
+modem.generic.supported-ip-families.length      : 3
+modem.generic.supported-ip-families.value[1]    : ipv4
+modem.generic.supported-ip-families.value[2]    : ipv6
+modem.generic.supported-ip-families.value[3]    : ipv4v6
+modem.generic.sim                               : /org/freedesktop/ModemManager1/SIM/0
+modem.generic.primary-sim-slot                  : --
+modem.generic.sim-slots.length                  : 0
+modem.generic.bearers.length                    : 1
+modem.generic.bearers.value[1]                  : /org/freedesktop/ModemManager1/Bearer/1
+modem.3gpp.imei                                 : 861234567890123
+modem.3gpp.enabled-locks.length                 : 2
+modem.3gpp.enabled-locks.value[1]               : sim
+modem.3gpp.enabled-locks.value[2]               : fixed-dialing
+modem.3gpp.operator-code                        : 52001
+modem.3gpp.operator-name                        : AIS
+modem.3gpp.registration-state                   : roaming
+modem.3gpp.packet-service-state                 : attached
+modem.3gpp.pco                                  : --
+modem.3gpp.eps.ue-mode-operation                : csps-2
+modem.3gpp.eps.initial-bearer.dbus-path         : --
+modem.3gpp.eps.initial-bearer.settings.apn      : --
+modem.3gpp.eps.initial-bearer.settings.ip-type  : ipv4v6
+modem.3gpp.eps.initial-bearer.settings.user     : --
+modem.3gpp.eps.initial-bearer.settings.password : --

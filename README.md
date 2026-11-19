@@ -21,6 +21,8 @@ A tvOS-style web dashboard and a set of small services that turn a cheap **MSM89
 | **Uptime checks** | HTTPS / TCP / ping targets with latency, over whatever uplink is active; Telegram alert on change |
 | **System** | Storage bars, RAM, temperature, services, logs; zram swap and storage trimming for 3–4 GB eMMC |
 | **Passkeys** | Optional WebAuthn sign-in: once a passkey exists, the dashboard requires it |
+| **Settings** | Notifications (Telegram + signed webhooks per event), Wi-Fi networks (scan/join/forget with automatic rollback), Cellular (APN, roaming, network mode, SIM PIN), SMS allow-list, uptime check targets + interval, hotspot channel/hidden/clients, System (hostname with Tailscale-name pinning, time zone, apt pin to `trixie`, safe `apt upgrade`, scheduled restart), VPN for Travel (VLESS link / sing-box JSON import), LED event mapping |
+| **USB link** | Address-only by default (the host keeps its own Internet); optional "share Internet with the USB computer" |
 
 ## Security model
 
@@ -41,6 +43,8 @@ rootfs/                     files copied to / on the stick
   usr/local/bin/uz-*         services and helpers (sms, gps, led, mode, gadget, probe, zram, lte, passkey…)
   etc/systemd/system/        units
   etc/uz/uz.conf             settings (role, backend, exit node…)
+  usr/local/lib/uz/settings/  settings modules (server side) — see docs/settings-modules.md
+  usr/local/share/uz/settings/ settings modules (UI)
 tools/
   stick-setup.sh             runs on the stick: installs files, enables services (idempotent)
   deploy.sh                  from your computer: setup | ssh | root | push (Tailscale SSH, or USB + password)
@@ -83,6 +87,10 @@ Create a bot with @BotFather, send it `/start`, then `UZ801_TG_TOKEN=<token> too
 * About 200 MB of the 512 MB RAM is reserved by firmware (the modem's `mpss` region alone is 85 MB on kernel 6.6). zram swap is enabled by `uz-zram`.
 * macOS ignores a new USB network interface while the screen is locked; if the stick's USB link never appears, unlock and re-plug (or reset the USB device).
 * Never pipe `fastboot` output into `head` — cutting the response hangs lk1st/lk2nd's fastboot.
+
+## Development
+
+`dev/run.sh` serves the dashboard on `http://127.0.0.1:18080` with auth disabled; `for t in dev/tests/*_test.py; do python3 -I $t; done` runs the module tests (fixtures in `dev/fixtures/`). New settings areas are self-contained modules — see [docs/settings-modules.md](docs/settings-modules.md).
 
 ## License
 

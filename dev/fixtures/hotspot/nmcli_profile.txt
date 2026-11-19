@@ -1,0 +1,4 @@
+bg
+6
+yes
+wpa-psk

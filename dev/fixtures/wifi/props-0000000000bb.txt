@@ -1,0 +1,4 @@
+802-11-wireless.ssid:OpenStick
+802-11-wireless.mode:ap
+802-11-wireless.hidden:no
+802-11-wireless-security.key-mgmt:wpa-psk

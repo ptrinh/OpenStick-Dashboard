@@ -419,7 +419,7 @@ def action(a, body):
         svg = ''
         try:
             svg = subprocess.run(['qrencode', '-t', 'SVG', '-m', '2', '-s', '6', '--foreground=000000', '--background=FFFFFF', '-o', '-',
-                                  f'WIFI:T:WPA;S:{q(ssid)};P:{q(psk)};;'], capture_output=True, text=True, timeout=10).stdout
+                                  f'WIFI:T:WPA;S:{q(ssid)};P:{q(psk)};' + ('H:true;' if nm_get('802-11-wireless.hidden', 'connection', 'show', 'uz-hotspot') == 'yes' else '') + ';'], capture_output=True, text=True, timeout=10).stdout
             svg = svg[svg.find('<svg'):] if '<svg' in svg else ''
         except Exception: pass
         return {'out': psk, 'ssid': ssid, 'qr': svg}
@@ -523,6 +523,14 @@ class H(BaseHTTPRequestHandler):
         if self.path == '/':
             page = rd(INDEX) or PAGE
             return self.send(200, page.encode(), 'text/html; charset=utf-8')
+        icons = {'/icon.svg': ('icon.svg', 'image/svg+xml'), '/favicon.ico': ('icon.svg', 'image/svg+xml'),
+                 '/apple-touch-icon.png': ('apple-touch-icon.png', 'image/png'), '/apple-touch-icon-precomposed.png': ('apple-touch-icon.png', 'image/png')}
+        if self.path in icons:                      # not secret: served even on the lock screen
+            fn, ct = icons[self.path]
+            try: data = open(os.path.join(os.path.dirname(INDEX), fn), 'rb').read()
+            except OSError: return self.deny(404, 'not found')
+            self.send_response(200); self.send_header('Content-Type', ct); self.send_header('Cache-Control', 'max-age=86400')
+            self.end_headers(); self.wfile.write(data); return
         mm = re.fullmatch(r'/ui/([a-z0-9_-]+)\.js', self.path)
         if mm:
             if not self.unlocked(mode): return self.send(401, {'error': 'locked'})
@@ -574,7 +582,7 @@ class H(BaseHTTPRequestHandler):
         if not m: return self.deny(404, 'not found')
         name = m[1]
         n = int(self.headers.get('Content-Length') or 0)
-        try: body = json.loads(self.rfile.read(min(n, 32768)) or b'{}')
+        try: body = json.loads(self.rfile.read(min(n, 98304)) or b'{}')
         except Exception: body = {}
         rp = self.host()
         try:

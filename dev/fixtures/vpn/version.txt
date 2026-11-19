@@ -1,0 +1,6 @@
+sing-box version 1.12.12
+
+Environment: go1.25.3 linux/arm64
+Tags: with_gvisor,with_quic,with_dhcp,with_wireguard,with_utls,with_acme,with_clash_api
+Revision: 0123456789abcdef
+CGO: disabled

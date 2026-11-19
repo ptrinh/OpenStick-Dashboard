@@ -1,0 +1,5 @@
+{"ok":true,"result":[
+ {"update_id":900001,"message":{"message_id":1,"from":{"id":111111,"is_bot":false,"first_name":"Old"},"chat":{"id":111111,"first_name":"Old","type":"private"},"date":1763600000,"text":"/start"}},
+ {"update_id":900002,"message":{"message_id":2,"from":{"id":222222,"is_bot":false,"first_name":"Phil","last_name":"T"},"chat":{"id":222222,"first_name":"Phil","last_name":"T","type":"private"},"date":1763600100,"text":"/start"}},
+ {"update_id":900003,"message":{"message_id":3,"from":{"id":333333,"is_bot":false,"first_name":"G"},"chat":{"id":-100777,"title":"Some group","type":"supergroup"},"date":1763600200,"text":"hi"}}
+]}

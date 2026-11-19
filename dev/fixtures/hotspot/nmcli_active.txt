@@ -1,0 +1,3 @@
+uz-hotspot:wlan0
+lte:wwan0
+lo:lo

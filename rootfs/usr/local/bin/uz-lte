@@ -36,7 +36,7 @@ while :; do
   if command -v resolvectl >/dev/null; then resolvectl dns $IF $DNS; resolvectl domain $IF '~.'
   elif [ ! -L /etc/resolv.conf ]; then printf 'nameserver %s\n' $DNS > /etc/resolv.conf; fi
   log "up: $IP gw $GW dns $DNS"
-  [ "$last_state" != "up $IP" ] && uz-notify "📶 LTE up: $IP" >/dev/null 2>&1 &
+  [ "$last_state" != "up $IP" ] && uz-notify --event lte_up --data "{\"ip\":\"$IP\"}" "📶 LTE up: $IP" >/dev/null 2>&1 &
   last_state="up $IP"
   fails=0
   while kill -0 $QPID 2>/dev/null; do

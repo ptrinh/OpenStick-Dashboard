@@ -1,13 +1,28 @@
 #!/bin/sh
-# uz-led daemon | set <red|green|blue> <mode> | locate | status
-# modes: auto on off blink slow heartbeat
-#  auto: red   = steady (power); fast blink when there is no internet at all
-#        green = Wi-Fi (client or hotspot): on with link, flickers on traffic
-#        blue  = 4G: on with link, flickers on traffic; slow blink while modem searches
-L=/sys/class/leds; CONF=/etc/uz/led.conf
-. /etc/uz/uz.conf 2>/dev/null; WAN=${UZ_WWAN:-wwan0}
+# uz-led daemon | set <red|green|blue> <mode> | locate | status | once
+# modes (/etc/uz/led.conf): auto on off blink slow heartbeat
+#  auto: shows the LED's source from /etc/uz/led-map.conf (red=internet, green=wifi, blue=lte by default):
+#    internet  = steady when online; fast blink when there is no internet at all
+#    wifi      = Wi-Fi (client or hotspot): on with link, flickers on traffic
+#    lte       = 4G: on with link, flickers on traffic; slow blink while modem searches
+#    tailscale = on while Tailscale is Running
+#    usb       = on while a USB host is attached (usb0 carrier)
+#    sms       = blinks while there is an unread incoming SMS (newer than /var/lib/uz/sms.seen)
+#    heartbeat = kernel heartbeat;  off = dark
+#  The map is re-read every pass; SIGHUP (pkill -HUP -f "uz-led daemon") applies it at once.
+#  `once` runs a single auto pass (for tests). UZ_LED_SYSFS / UZ_LED_CONF / UZ_LED_MAP / UZ_LED_VAR
+#  override /sys, led.conf, led-map.conf and /var/lib/uz (tests only).
+SYS=${UZ_LED_SYSFS:-/sys}; L=$SYS/class/leds; N=$SYS/class/net
+CONF=${UZ_LED_CONF:-/etc/uz/led.conf}; MAP=${UZ_LED_MAP:-/etc/uz/led-map.conf}
+VAR=${UZ_LED_VAR:-/var/lib/uz}; SMSLOG=$VAR/sms.jsonl; SEEN=$VAR/sms.seen
+[ -r /etc/uz/uz.conf ] && . /etc/uz/uz.conf; WAN=${UZ_WWAN:-wwan0}
 dev(){ case $1 in red) echo red:power ;; green) echo green:wlan ;; blue) echo blue:wan ;; esac; }
 get(){ v=$(grep "^$1=" $CONF 2>/dev/null | cut -d= -f2); echo ${v:-auto}; }
+src(){  # what `auto` shows on LED $1 (invalid/missing entries fall back to the defaults)
+  v=$(grep "^$1=" $MAP 2>/dev/null | tail -1 | cut -d= -f2 | tr -d ' \r')
+  case $v in internet|wifi|lte|tailscale|usb|sms|heartbeat|off) echo $v ;;
+    *) case $1 in red) echo internet ;; green) echo wifi ;; blue) echo lte ;; esac ;; esac
+}
 cur=""
 apply(){  # $1 led, $2 mode (concrete), $3 netdev
   d=$L/$(dev $1); key="$1:$2:$3"
@@ -22,30 +37,47 @@ apply(){  # $1 led, $2 mode (concrete), $3 netdev
     net) echo netdev > $d/trigger; echo $3 > $d/device_name; echo 1 > $d/link; echo 1 > $d/tx; echo 1 > $d/rx ;;
   esac
 }
+online(){  # computed at most once per pass (ping is slow)
+  [ -n "$ONL" ] || { ONL=0; ip route show default 2>/dev/null | grep -q . && ping -c1 -W3 1.1.1.1 >/dev/null 2>&1 && ONL=1; }
+  [ "$ONL" = 1 ]
+}
+sms_unread(){  # last incoming SMS differs from the one marked seen; first run marks the current one seen
+  last=$(grep '^{"dir": "in"' $SMSLOG 2>/dev/null | tail -1); [ -n "$last" ] || return 1
+  h=$(printf '%s\n' "$last" | md5sum | cut -d' ' -f1)
+  [ -s $SEEN ] || { echo $h > $SEEN; return 1; }
+  [ "$(cat $SEEN)" != "$h" ]
+}
+show(){  # $1 led in auto mode
+  case $(src $1) in
+    internet) if online; then apply $1 on; else apply $1 blink; fi ;;
+    wifi) if [ "$(cat $N/wlan0/operstate 2>/dev/null)" = up ]; then apply $1 net wlan0; else apply $1 off; fi ;;
+    lte)
+      if ip -4 addr show $WAN 2>/dev/null | grep -q inet; then apply $1 net $WAN
+      elif { [ -e /dev/wwan0qmi0 ] && pgrep -f uz-lte >/dev/null; } || \
+           { command -v mmcli >/dev/null && mmcli -L 2>/dev/null | grep -q Modem; }; then apply $1 slow
+      else apply $1 off; fi ;;
+    tailscale) if tailscale status --json --peers=false 2>/dev/null | grep -q '"BackendState": *"Running"'; then apply $1 on; else apply $1 off; fi ;;
+    usb) if [ "$(cat $N/usb0/carrier 2>/dev/null)" = 1 ]; then apply $1 on; else apply $1 off; fi ;;
+    sms) if sms_unread; then apply $1 blink; else apply $1 off; fi ;;
+    heartbeat) apply $1 heartbeat ;;
+    *) apply $1 off ;;
+  esac
+}
 auto(){
-  online=0; ip route show default | grep -q . && ping -c1 -W3 1.1.1.1 >/dev/null 2>&1 && online=1
-  [ "$(get red)" = auto ] && { [ $online = 1 ] && apply red on || apply red blink; }
-  if [ "$(get green)" = auto ]; then
-    if [ "$(cat /sys/class/net/wlan0/operstate 2>/dev/null)" = up ]; then apply green net wlan0; else apply green off; fi
-  fi
-  if [ "$(get blue)" = auto ]; then
-    if ip -4 addr show $WAN 2>/dev/null | grep -q inet; then apply blue net $WAN
-    elif { [ -e /dev/wwan0qmi0 ] && pgrep -f uz-lte >/dev/null; } || \
-         { command -v mmcli >/dev/null && mmcli -L 2>/dev/null | grep -q Modem; }; then apply blue slow
-    else apply blue off; fi
-  fi
-  for c in red green blue; do m=$(get $c); [ $m != auto ] && apply $c $m; done
+  ONL=""
+  for c in red green blue; do m=$(get $c); if [ "$m" = auto ]; then show $c; else apply $c $m; fi; done
 }
 case ${1:-} in
-  daemon) modprobe -q ledtrig-timer; modprobe -q ledtrig-netdev; modprobe -q ledtrig-pattern
+  daemon) modprobe -q ledtrig-timer; modprobe -q ledtrig-netdev; modprobe -q ledtrig-pattern; modprobe -q ledtrig-heartbeat
           trap 'cur=""' HUP
           while :; do auto; sleep 5 & wait $!; done ;;
+  once) auto ;;
   set) case $2 in red|green|blue) ;; *) echo "led: red|green|blue"; exit 1 ;; esac
        case $3 in auto|on|off|blink|slow|heartbeat) ;; *) echo "mode: auto|on|off|blink|slow|heartbeat"; exit 1 ;; esac
        touch $CONF; grep -v "^$2=" $CONF > $CONF.t; echo "$2=$3" >> $CONF.t; mv $CONF.t $CONF
        pkill -HUP -f "uz-led daemon"; echo "$2=$3" ;;
   locate) for c in red:power green:wlan blue:wan; do echo timer > $L/$c/trigger; echo 80 > $L/$c/delay_on; echo 80 > $L/$c/delay_off; done
           sleep ${2:-10}; pkill -HUP -f "uz-led daemon" ;;
-  status) for c in red green blue; do d=$L/$(dev $c); echo "$c mode=$(get $c) trigger=$(sed -E 's/.*\[([^]]+)\].*/\1/' $d/trigger) on=$(cat $d/brightness)"; done ;;
-  *) echo "usage: uz-led daemon | set <red|green|blue> <auto|on|off|blink|slow|heartbeat> | locate [sec] | status" ;;
+  status) for c in red green blue; do d=$L/$(dev $c); echo "$c mode=$(get $c) auto=$(src $c) trigger=$(sed -E 's/.*\[([^]]+)\].*/\1/' $d/trigger) on=$(cat $d/brightness)"; done ;;
+  *) echo "usage: uz-led daemon | set <red|green|blue> <auto|on|off|blink|slow|heartbeat> | locate [sec] | status | once" ;;
 esac

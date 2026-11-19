@@ -1,0 +1,2 @@
+{ OnBootUSec=3min ; next_elapse=0 }
+{ OnUnitActiveUSec=10min ; next_elapse=1d 2h 3min 4.512s }

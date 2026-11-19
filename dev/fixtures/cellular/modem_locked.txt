@@ -1,0 +1,31 @@
+modem.dbus-path                                 : /org/freedesktop/ModemManager1/Modem/0
+modem.generic.plugin                            : qcom-soc
+modem.generic.primary-port                      : qmi0
+modem.generic.manufacturer                      : QUALCOMM INCORPORATED
+modem.generic.model                             : 0
+modem.generic.supported-capabilities.length     : 1
+modem.generic.supported-capabilities.value[1]   : gsm-umts, lte
+modem.generic.own-numbers.length                : 0
+modem.generic.unlock-required                   : sim-pin
+modem.generic.unlock-retries.length             : 4
+modem.generic.unlock-retries.value[1]           : sim-pin (2)
+modem.generic.unlock-retries.value[2]           : sim-puk (10)
+modem.generic.unlock-retries.value[3]           : sim-pin2 (3)
+modem.generic.unlock-retries.value[4]           : sim-puk2 (10)
+modem.generic.state                             : locked
+modem.generic.state-failed-reason               : --
+modem.generic.power-state                       : on
+modem.generic.access-technologies.length        : 0
+modem.generic.signal-quality.value              : 0
+modem.generic.signal-quality.recent             : no
+modem.generic.supported-modes.length            : 0
+modem.generic.current-modes                     : --
+modem.generic.sim                               : /org/freedesktop/ModemManager1/SIM/0
+modem.generic.primary-sim-slot                  : --
+modem.generic.sim-slots.length                  : 0
+modem.generic.bearers.length                    : 0
+modem.3gpp.imei                                 : 861234567890123
+modem.3gpp.enabled-locks.length                 : 0
+modem.3gpp.operator-code                        : --
+modem.3gpp.operator-name                        : --
+modem.3gpp.registration-state                   : --

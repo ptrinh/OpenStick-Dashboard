@@ -1,0 +1,52 @@
+modem.dbus-path                                 : /org/freedesktop/ModemManager1/Modem/0
+modem.generic.device                            : /sys/devices/platform/soc@0/4080000.remoteproc/remoteproc0
+modem.generic.drivers.length                    : 1
+modem.generic.drivers.value[1]                  : qcom-q6v5-mss
+modem.generic.plugin                            : qcom-soc
+modem.generic.primary-port                      : qmi0
+modem.generic.ports.length                      : 2
+modem.generic.ports.value[1]                    : qmi0 (qmi)
+modem.generic.ports.value[2]                    : rmnet_data0 (net)
+modem.generic.equipment-identifier              : 861234567890123
+modem.generic.device-identifier                 : 4b2f0c1a9e
+modem.generic.manufacturer                      : QUALCOMM INCORPORATED
+modem.generic.model                             : 0
+modem.generic.revision                          : MPSS.JO.2.0.2.c1.1-00044-8909_GENNS_PACK-1
+modem.generic.carrier-configuration             : --
+modem.generic.carrier-configuration-revision    : --
+modem.generic.hardware-revision                 : 10000
+modem.generic.supported-capabilities.length     : 1
+modem.generic.supported-capabilities.value[1]   : gsm-umts, lte
+modem.generic.current-capabilities.length       : 1
+modem.generic.current-capabilities.value[1]     : gsm-umts, lte
+modem.generic.own-numbers.length                : 0
+modem.generic.unlock-required                   : --
+modem.generic.unlock-retries.length             : 0
+modem.generic.state                             : failed
+modem.generic.state-failed-reason               : sim-missing
+modem.generic.power-state                       : on
+modem.generic.access-technologies.length        : 0
+modem.generic.signal-quality.value              : 0
+modem.generic.signal-quality.recent             : no
+modem.generic.supported-modes.length            : 0
+modem.generic.current-modes                     : --
+modem.generic.supported-bands.length            : 0
+modem.generic.current-bands.length              : 0
+modem.generic.supported-ip-families.length      : 0
+modem.generic.sim                               : --
+modem.generic.primary-sim-slot                  : --
+modem.generic.sim-slots.length                  : 0
+modem.generic.bearers.length                    : 0
+modem.3gpp.imei                                 : 861234567890123
+modem.3gpp.enabled-locks.length                 : 0
+modem.3gpp.operator-code                        : --
+modem.3gpp.operator-name                        : --
+modem.3gpp.registration-state                   : --
+modem.3gpp.packet-service-state                 : --
+modem.3gpp.pco                                  : --
+modem.3gpp.eps.ue-mode-operation                : --
+modem.3gpp.eps.initial-bearer.dbus-path         : --
+modem.3gpp.eps.initial-bearer.settings.apn      : --
+modem.3gpp.eps.initial-bearer.settings.ip-type  : --
+modem.3gpp.eps.initial-bearer.settings.user     : --
+modem.3gpp.eps.initial-bearer.settings.password : --

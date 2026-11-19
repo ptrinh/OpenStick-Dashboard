@@ -1,0 +1,14 @@
+sim.dbus-path                                   : /org/freedesktop/ModemManager1/SIM/0
+sim.properties.active                           : yes
+sim.properties.imsi                             : --
+sim.properties.iccid                            : 8984048000012345678
+sim.properties.operator-code                    : --
+sim.properties.operator-name                    : --
+sim.properties.emergency-numbers.length         : 0
+sim.properties.preferred-networks.length        : 0
+sim.properties.sim-type                         : physical
+sim.properties.esim-status                      : --
+sim.properties.removability                     : removable
+sim.properties.gid1                             : --
+sim.properties.gid2                             : --
+sim.properties.eid                              : --

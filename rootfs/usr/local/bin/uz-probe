@@ -42,5 +42,6 @@ for t in targets:
     prev = old.get(t)
     prev_ok = prev.get('ok') if isinstance(prev, dict) else prev
     if prev is not None and prev_ok != ok:
-        tg.send(('✅ UP ' if ok else '🔴 DOWN ') + t + (f' ({info})' if info else '') + f' [via {via}]')
+        tg.notify('uptime_change', ('✅ UP ' if ok else '🔴 DOWN ') + t + (f' ({info})' if info else '') + f' [via {via}]',
+                  {'target': t, 'ok': ok, 'ms': ms, 'info': info, 'via': via})
 json.dump(new, open(STATE, 'w'))

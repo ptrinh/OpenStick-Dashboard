@@ -1,21 +1,184 @@
 #!/usr/bin/env python3
-# uz-notify "text" — send a Telegram message using /etc/uz/telegram.env (TG_TOKEN, TG_CHAT).
-import sys, json, urllib.request, urllib.parse
+"""uz-notify — send an event to the configured notification channels.
+
+  uz-notify "text"                          generic message → every enabled channel (no event filter)
+  uz-notify --event NAME [--data JSON] "text"
+  echo text | uz-notify [--event NAME]
+
+Channels:
+  Telegram  /etc/uz/telegram.env (TG_TOKEN, TG_CHAT[, TG_BOT]) — also read by uz-sms's bot.
+  Webhook   POST JSON {"event","text","data","host","ts"}; header X-UZ-Signature: sha256=<HMAC-SHA256 of the
+            raw body with the secret> when a secret is set. 10 s timeout, 2 retries, redirects not followed.
+Routing:   /etc/uz/notify.json (0600)
+  {"telegram": {"enabled": true, "events": [...]}, "webhook": {"enabled": false, "url": "", "secret": "", "events": [...]}}
+  Absent → Telegram gets every event (the old behaviour), no webhook.
+Python API (uz-sms / uz-probe load this file): send(text, chat=None) → bool (Telegram only, unchanged);
+notify(event, text, data=None) → {channel: (ok, detail)}.
+Tokens, secrets and webhook URLs are never printed.
+UZ_ETC overrides /etc/uz (tests)."""
+import hashlib, hmac, json, os, socket, sys, time, urllib.error, urllib.parse, urllib.request
+
+EVENTS = ('sms_received', 'sms_command', 'sms_rejected', 'uptime_change', 'lte_up', 'test')
+GENERIC = 'message'          # plain `uz-notify "text"`: not filterable, goes to every enabled channel
+TG_API = 'https://api.telegram.org'
+
+def etc(name=''): return os.path.join(os.environ.get('UZ_ETC', '/etc/uz'), name)
+
 def env():
     d = {}
     try:
-        for l in open('/etc/uz/telegram.env'):
-            if '=' in l: k, v = l.strip().split('=', 1); d[k] = v
+        with open(etc('telegram.env')) as f:
+            for l in f:
+                if '=' in l: k, v = l.strip().split('=', 1); d[k] = v
     except OSError: pass
     return d
-def send(text, chat=None):
+
+def defaults():
+    return {'telegram': {'enabled': True, 'events': list(EVENTS)},
+            'webhook': {'enabled': False, 'url': '', 'secret': '', 'events': list(EVENTS)}}
+
+def load_config():
+    """notify.json merged over the defaults; unknown keys/events dropped, bad types ignored."""
+    c = defaults()
+    try:
+        with open(etc('notify.json')) as f: raw = json.load(f)
+    except FileNotFoundError: return c
+    except Exception as e:
+        print(f'uz-notify: notify.json unreadable ({type(e).__name__}), using defaults', file=sys.stderr); return c
+    if not isinstance(raw, dict): return c
+    for ch in ('telegram', 'webhook'):
+        r = raw.get(ch)
+        if not isinstance(r, dict): continue
+        if isinstance(r.get('enabled'), bool): c[ch]['enabled'] = r['enabled']
+        if isinstance(r.get('events'), list): c[ch]['events'] = [e for e in EVENTS if e in r['events']]
+        if ch == 'webhook':
+            for k in ('url', 'secret'):
+                if isinstance(r.get(k), str): c[ch][k] = r[k]
+    return c
+
+def wants(cfg, ch, event):
+    c = cfg[ch]
+    return bool(c.get('enabled')) and (event == GENERIC or event in c.get('events', []))
+
+def _scrub(s, *secrets):
+    s = str(s)
+    for x in secrets:
+        if x and len(x) >= 4: s = s.replace(x, '***')
+    return s[:200]
+
+def _why(e):
+    """Short, secret-free reason for a network exception."""
+    if isinstance(e, urllib.error.HTTPError): return f'HTTP {e.code}'
+    r = getattr(e, 'reason', e)
+    if isinstance(r, (socket.timeout, TimeoutError)) or isinstance(e, (socket.timeout, TimeoutError)): return 'timeout'
+    if isinstance(r, socket.gaierror): return 'DNS lookup failed'
+    if isinstance(r, ConnectionRefusedError): return 'connection refused'
+    return f'network error ({type(r).__name__})'
+
+# ---------- Telegram ----------
+def tg_api(token, method, params=None, timeout=20):
+    """Call a Telegram Bot API method → (ok, result | short error). The token never appears in the error."""
+    data = urllib.parse.urlencode(params).encode() if params else None
+    try:
+        with urllib.request.urlopen(f'{TG_API}/bot{token}/{method}', data, timeout=timeout) as r:
+            j = json.load(r)
+        return (True, j.get('result')) if j.get('ok') else (False, _scrub(j.get('description') or 'Telegram error', token))
+    except urllib.error.HTTPError as e:
+        try: desc = json.load(e).get('description') or ''
+        except Exception: desc = ''
+        finally: e.close()
+        return False, _scrub(f'HTTP {e.code}' + (f' {desc}' if desc else ''), token)
+    except Exception as e:
+        return False, _why(e)
+
+def tg_send(text, chat=None):
+    """→ (ok, detail). Up to 3 attempts; 4xx answers (bad token, unknown chat) are not retried."""
     e = env(); tok = e.get('TG_TOKEN'); chat = chat or e.get('TG_CHAT')
-    if not tok or not chat: print('telegram not configured', file=sys.stderr); return False
-    data = urllib.parse.urlencode({'chat_id': chat, 'text': text[:4000]}).encode()
-    for _ in range(3):
+    if not tok or not chat: return False, 'telegram not configured'
+    err = 'failed'
+    for i in range(3):
+        ok, res = tg_api(tok, 'sendMessage', {'chat_id': chat, 'text': str(text)[:4000]})
+        if ok: return True, 'delivered'
+        err = res
+        if res.startswith('HTTP 4') and not res.startswith('HTTP 429'): break
+        if i < 2: time.sleep(2)
+    return False, err
+
+def send(text, chat=None):
+    ok, detail = tg_send(text, chat)
+    if not ok: print(f'telegram: {detail}', file=sys.stderr)
+    return ok
+
+# ---------- webhook ----------
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, *a, **k): return None          # → HTTPError 3xx
+
+_OPENER = urllib.request.build_opener(_NoRedirect)
+def _post(req, timeout): return _OPENER.open(req, timeout=timeout)
+
+def sign(body, secret):
+    return 'sha256=' + hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
+
+def payload(event, text, data=None):
+    return {'event': event, 'text': str(text), 'data': data if data is not None else {},
+            'host': socket.gethostname(), 'ts': int(time.time())}
+
+def webhook_send(event, text, data=None, cfg=None, retries=2, pause=2):
+    w = (cfg or load_config())['webhook']; url, secret = w.get('url', ''), w.get('secret', '')
+    if not url: return False, 'webhook not configured'
+    body = json.dumps(payload(event, text, data), ensure_ascii=False, separators=(',', ':')).encode()
+    hdr = {'Content-Type': 'application/json', 'User-Agent': 'uz-notify/1'}
+    if secret: hdr['X-UZ-Signature'] = sign(body, secret)
+    err = 'failed'
+    for i in range(retries + 1):
         try:
-            urllib.request.urlopen(f'https://api.telegram.org/bot{tok}/sendMessage', data, timeout=20); return True
-        except Exception as ex: err = ex
-    print(f'send failed: {type(err).__name__}', file=sys.stderr); return False
+            with _post(urllib.request.Request(url, body, hdr, method='POST'), 10) as r:
+                code = getattr(r, 'status', 200)
+            if 200 <= code < 300: return True, f'HTTP {code}'
+            err = f'HTTP {code}'
+        except urllib.error.HTTPError as e:
+            err = f'HTTP {e.code}' + (' (redirects are not followed)' if 300 <= e.code < 400 else ''); e.close()
+            if 300 <= e.code < 500 and e.code not in (408, 429): break
+        except Exception as e:
+            err = _why(e)
+        if i < retries: time.sleep(pause)
+    return False, _scrub(err, url, secret)
+
+# ---------- fan-out ----------
+def notify(event, text, data=None):
+    """Send to every channel that is configured, enabled and subscribed to `event` → {channel: (ok, detail)}."""
+    if event != GENERIC and event not in EVENTS: event = GENERIC
+    cfg, out = load_config(), {}
+    e = env()
+    if e.get('TG_TOKEN') and e.get('TG_CHAT') and wants(cfg, 'telegram', event): out['telegram'] = tg_send(text)
+    if cfg['webhook'].get('url') and wants(cfg, 'webhook', event): out['webhook'] = webhook_send(event, text, data, cfg)
+    for ch, (ok, detail) in out.items():
+        if not ok: print(f'uz-notify: {ch}: {detail}', file=sys.stderr)
+    return out
+
+def test(channel):
+    """Send a test to one channel, ignoring its event filter and enabled flag → (ok, detail)."""
+    text = f'🔔 Test notification from {socket.gethostname()}'
+    if channel == 'telegram': return tg_send(text)
+    if channel == 'webhook': return webhook_send('test', text, {'test': True})
+    return False, 'unknown channel'
+
+def main(argv):
+    event, data, words = GENERIC, None, []
+    it = iter(argv)
+    for a in it:
+        if a == '--event': event = next(it, '')
+        elif a == '--data':
+            try: data = json.loads(next(it, ''))
+            except ValueError: print('uz-notify: --data must be JSON', file=sys.stderr); return 2
+        elif a in ('-h', '--help'): print(__doc__); return 0
+        else: words.append(a)
+    if event != GENERIC and event not in EVENTS:
+        print(f'uz-notify: unknown event (one of: {", ".join(EVENTS)})', file=sys.stderr); return 2
+    text = ' '.join(words) or sys.stdin.read()
+    res = notify(event, text, data)
+    if not res: print('uz-notify: no channel configured for this event', file=sys.stderr); return 1
+    return 0 if all(ok for ok, _ in res.values()) else 1
+
 if __name__ == '__main__':
-    sys.exit(0 if send(' '.join(sys.argv[1:]) or sys.stdin.read()) else 1)
+    sys.exit(main(sys.argv[1:]))

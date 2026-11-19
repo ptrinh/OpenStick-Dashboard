@@ -1,0 +1,8 @@
+# mixed: some already pinned, options, deb-src, comments, a third-party repo on "stable"
+deb [arch=arm64 signed-by=/usr/share/keyrings/debian-archive-keyring.gpg] https://deb.debian.org/debian stable main
+deb http://deb.debian.org/debian trixie-updates main
+#deb http://deb.debian.org/debian stable-backports main
+deb-src http://deb.debian.org/debian stable main
+	deb   http://security.debian.org/debian-security   stable-security   main
+deb https://example.com/repo stable main
+deb http://deb.debian.org.evil.example/debian stable main

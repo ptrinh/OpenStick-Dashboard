@@ -135,7 +135,7 @@ def run_cmd(words):
     if c == 'reboot': _sh('systemd-run --collect --quiet --on-active=10 systemctl reboot'); return 'rebooting in 10s'
     return HELP
 def on_sms(p, sender, text, ts):
-    pin = _rd('/etc/uz/sms.pin'); allow = [x.strip() for x in _rd('/etc/uz/sms.allow').splitlines() if x.strip()]
+    pin = _rd('/etc/uz/sms.pin'); allow = [x.strip() for x in _rd('/etc/uz/sms.allow').splitlines() if x.strip() and not x.strip().startswith('#')]
     words = text.split()
     CMDS = ('status', 'where', 'wifi', 'mode', 'lte', 'ts', 'reboot', 'help')
     # a command is "<digits> <known command>"; anything else (e.g. "123456 is your OTP") is a normal SMS
@@ -143,14 +143,17 @@ def on_sms(p, sender, text, ts):
     shown = text.replace(pin, '******') if pin else text
     logsms('in', sender, shown, ts)
     if not is_cmd:
-        tg.send(f'✉️ SMS from {sender} ({ts})\n{text}'); return
+        tg.notify('sms_received', f'✉️ SMS from {sender} ({ts})\n{text}', {'from': sender, 'ts': ts, 'text': text}); return
     now = time.time(); FAILS[:] = [t for t in FAILS if now - t < 3600]
     ok_sender = not allow or any(sender.endswith(a.lstrip('+')[-9:]) for a in allow)
-    if words[0] != pin or not ok_sender or len(FAILS) >= 5:
-        if words[0] != pin or not ok_sender: FAILS.append(now)
-        tg.send(f'⚠️ Rejected SMS command from {sender} ({"locked" if len(FAILS) >= 5 else "bad PIN/sender"})'); return
+    if not ok_sender:   # not on the allow-list: ignored, and it does NOT count toward the lockout
+        tg.notify('sms_rejected', f'⚠️ Ignored SMS command from non-allowed {sender}', {'from': sender, 'reason': 'not allowed'}); return
+    if words[0] != pin or len(FAILS) >= 5:
+        if words[0] != pin: FAILS.append(now)
+        why = 'locked' if len(FAILS) >= 5 else 'bad PIN'
+        tg.notify('sms_rejected', f'⚠️ Rejected SMS command from {sender} ({why})', {'from': sender, 'reason': why}); return
     reply = run_cmd(words[1:])[:300]
-    tg.send(f'📟 SMS command from {sender}: {" ".join(words[1:])}\n→ {reply}')
+    tg.notify('sms_command', f'📟 SMS command from {sender}: {" ".join(words[1:])}\n→ {reply}', {'from': sender, 'command': ' '.join(words[1:]), 'reply': reply})
     send_sms(p, sender, reply)
 
 LOG = '/var/lib/uz/sms.jsonl'

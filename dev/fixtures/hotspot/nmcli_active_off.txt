@@ -1,0 +1,2 @@
+lte:wwan0
+Home\: Wi-Fi:wlan0

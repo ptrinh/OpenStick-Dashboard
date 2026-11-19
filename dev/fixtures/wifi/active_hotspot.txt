@@ -1,0 +1,2 @@
+6f1c3c1e-5a43-4d0e-9f53-2a3c2b1f0a01:lte:gsm:wwan0
+1b2c3d4e-0000-4000-8000-0000000000aa:uz-hotspot:802-11-wireless:wlan0

@@ -1,0 +1,3 @@
+red mode=auto auto=internet trigger=none on=1
+green mode=off auto=wifi trigger=none on=0
+blue mode=auto auto=lte trigger=netdev on=1

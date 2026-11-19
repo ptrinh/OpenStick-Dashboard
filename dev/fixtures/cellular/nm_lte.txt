@@ -1,0 +1,6 @@
+internet
+
+0
+no
+auto
+auto
