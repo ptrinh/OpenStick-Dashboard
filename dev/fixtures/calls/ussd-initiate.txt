@@ -1,0 +1,3 @@
+USSD session initiated; new reply from network: 'TK chinh: 12.345d, HSD 31/12/2026.
+1. Nap the
+2. Goi cuoc'

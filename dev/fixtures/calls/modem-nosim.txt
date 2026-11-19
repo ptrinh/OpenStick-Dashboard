@@ -1,0 +1,8 @@
+modem.dbus-path                          : /org/freedesktop/ModemManager1/Modem/0
+modem.generic.manufacturer               : QUALCOMM INCORPORATED
+modem.generic.model                      : 0
+modem.generic.plugin                     : qcom-soc
+modem.generic.sim                        : --
+modem.generic.state                      : failed
+modem.generic.state-failed-reason        : sim-missing
+modem.generic.unlock-required            : --

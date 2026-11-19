@@ -2,7 +2,7 @@
 """Uptime checks over the stick's current uplink (4G / Wi-Fi / USB); Telegram alert only on state change.
 Targets in /etc/uz/probe.list: `https://url`, `tcp:host:port` or `ping:host`.
 State file: {target: {"ok": bool, "ms": int|None, "info": str}, "_via": iface, "_at": epoch}"""
-import json, re, socket, subprocess, time, urllib.request, urllib.error, sys
+import json, os, re, socket, subprocess, time, urllib.request, urllib.error, sys
 from importlib.machinery import SourceFileLoader
 tg = SourceFileLoader('uznotify', '/usr/local/bin/uz-notify').load_module()
 STATE = '/var/lib/uz/probe.json'
@@ -34,6 +34,7 @@ try: old = json.load(open(STATE))
 except Exception: old = {}
 dev = uplink(); via = VIA.get(dev, dev or 'offline')
 new = {'_via': dev, '_at': int(time.time())}
+went_down = False
 for t in targets:
     ok, ms, info = check(t)
     if not ok:  # confirm before alerting
@@ -44,4 +45,11 @@ for t in targets:
     if prev is not None and prev_ok != ok:
         tg.notify('uptime_change', ('✅ UP ' if ok else '🔴 DOWN ') + t + (f' ({info})' if info else '') + f' [via {via}]',
                   {'target': t, 'ok': ok, 'ms': ms, 'info': info, 'via': via})
+        went_down = went_down or not ok
 json.dump(new, open(STATE, 'w'))
+# optional "ring my phone" alarm (/etc/uz/calls.json alarm.*); uz-calls checks the config and the 30-min limit.
+# systemd-run: this oneshot unit's cgroup is killed when we exit, the ring must outlive it.
+if went_down and os.path.exists('/usr/local/bin/uz-calls') and os.path.exists('/usr/bin/mmcli'):
+    try: subprocess.run(['systemd-run', '--collect', '--quiet', '--unit=uz-calls-alarm', '/usr/local/bin/uz-calls', 'alarm'],
+                        capture_output=True, timeout=15)
+    except Exception: pass

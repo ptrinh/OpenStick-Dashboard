@@ -1,0 +1,10 @@
+call.dbus-path                          : /org/freedesktop/ModemManager1/Call/2
+call.properties.number                  : +84911222333
+call.properties.direction               : outgoing
+call.properties.multiparty              : no
+call.properties.state                   : ringing-out
+call.properties.state-reason            : outgoing-started
+call.properties.audio-port              : --
+call.properties.audio-format.encoding   : --
+call.properties.audio-format.resolution : --
+call.properties.audio-format.rate       : --

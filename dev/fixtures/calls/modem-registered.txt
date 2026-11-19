@@ -1,0 +1,6 @@
+modem.dbus-path                          : /org/freedesktop/ModemManager1/Modem/0
+modem.generic.plugin                     : qcom-soc
+modem.generic.sim                        : /org/freedesktop/ModemManager1/SIM/0
+modem.generic.state                      : registered
+modem.generic.state-failed-reason        : --
+modem.generic.unlock-required            : sim-pin2

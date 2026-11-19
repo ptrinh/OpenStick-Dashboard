@@ -1,0 +1,3 @@
+modem.3gpp.ussd.status               : user-response
+modem.3gpp.ussd.network-request      : --
+modem.3gpp.ussd.network-notification : --

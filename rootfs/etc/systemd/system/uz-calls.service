@@ -1,0 +1,12 @@
+[Unit]
+Description=UZ801 voice call policy (reject / triggers / missed-call notifications)
+ConditionPathExists=/usr/bin/mmcli
+After=ModemManager.service
+[Service]
+ExecStart=/usr/local/bin/uz-calls daemon
+Restart=always
+RestartSec=10
+MemoryMax=30M
+Nice=5
+[Install]
+WantedBy=multi-user.target

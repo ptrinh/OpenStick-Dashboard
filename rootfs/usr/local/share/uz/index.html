@@ -582,7 +582,7 @@ window.UZ={
 };
 const GROUPS=['network','messaging','device','security'];
 const PLACE={wifi:['network',10],cellular:['network',20],hotspot:['network',30],tailscale:['network',40],vpn:['network',50],usblink:['network',60],
- smsallow:['messaging',10],notify:['messaging',20],leds:['device',10],checks:['device',20],system:['device',30],passkeys:['security',10],sshpw:['security',20]};
+ smsallow:['messaging',10],calls:['messaging',15],notify:['messaging',20],leds:['device',10],checks:['device',20],system:['device',30],passkeys:['security',10],sshpw:['security',20]};
 const tt=k=>({en:L.en[k],vi:L.vi[k],zh:L.zh[k]});
 [{id:'tailscale',color:'gray',icon:'net',title:{en:'Tailscale',vi:'Tailscale',zh:'Tailscale'},sub:S=>S.paired?((S.ts||{}).login||'')+(S.exit_node&&S.exit_node.advertised?' · '+t('exitNode'):''):t('notPaired'),open:()=>A.ts()},
  {id:'usblink',color:'purple',icon:'up',title:tt('usbLink'),sub:S=>S.usb_share?t('usbShare'):usbState((S.net||{}).usb)[1],open:()=>A.usb()},

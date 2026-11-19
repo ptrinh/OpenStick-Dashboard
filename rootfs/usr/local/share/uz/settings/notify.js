@@ -10,7 +10,7 @@ const T = {
   secretPh: 'Signing secret (optional, 8+ characters)', secretKeep: 'New secret (leave empty to keep)', noSecret: 'Remove secret',
   payload: 'Payload', sigHelp: 'Each event is POSTed as JSON (10 s timeout, 2 retries, redirects not followed). With a secret, the header X-UZ-Signature carries sha256=<hex HMAC-SHA256 of the raw request body, keyed with the secret>. Verify it before trusting the request.',
   needToken: 'Save a bot token first.', needChat: 'No chat yet — detect it.',
-  ev: {sms_received: 'SMS received', sms_command: 'SMS command', sms_rejected: 'Rejected command', uptime_change: 'Uptime up/down', lte_up: 'LTE up', test: 'Test'}},
+  ev: {sms_received: 'SMS received', sms_command: 'SMS command', sms_rejected: 'Rejected command', call_incoming: 'Incoming call', call_missed: 'Missed call', call_trigger: 'Call trigger', uptime_change: 'Uptime up/down', lte_up: 'LTE up', test: 'Test'}},
  vi: {title: 'Thông báo', notSet: 'Chưa đặt', desc: 'Chọn nơi USB gửi sự kiện SMS, giám sát và LTE.',
   tg: 'Telegram', wh: 'Webhook', bot: 'Bot', chat: 'Chat', token: 'Token', set: 'đã đặt', notset: 'chưa đặt',
   tokenPh: 'Token bot từ @BotFather (123456:ABC…)', tokenKeep: 'Token bot mới (để trống để giữ nguyên)', save: 'Lưu',
@@ -20,7 +20,7 @@ const T = {
   secretPh: 'Khoá ký (tuỳ chọn, từ 8 ký tự)', secretKeep: 'Khoá mới (để trống để giữ nguyên)', noSecret: 'Bỏ khoá',
   payload: 'Dữ liệu gửi', sigHelp: 'Mỗi sự kiện được POST dạng JSON (timeout 10 giây, thử lại 2 lần, không theo chuyển hướng). Khi có khoá, header X-UZ-Signature chứa sha256=<hex HMAC-SHA256 của nguyên thân request, khoá là secret>. Hãy kiểm tra chữ ký trước khi tin request.',
   needToken: 'Hãy lưu token bot trước.', needChat: 'Chưa có chat — hãy dò chat.',
-  ev: {sms_received: 'Nhận SMS', sms_command: 'Lệnh SMS', sms_rejected: 'Lệnh bị từ chối', uptime_change: 'Giám sát lên/xuống', lte_up: 'LTE kết nối', test: 'Thử'}},
+  ev: {sms_received: 'Nhận SMS', sms_command: 'Lệnh SMS', sms_rejected: 'Lệnh bị từ chối', call_incoming: 'Cuộc gọi đến', call_missed: 'Cuộc gọi nhỡ', call_trigger: 'Gọi để chạy lệnh', uptime_change: 'Giám sát lên/xuống', lte_up: 'LTE kết nối', test: 'Thử'}},
  zh: {title: '通知', notSet: '未设置', desc: '选择设备发送短信、在线监测和 LTE 事件的位置。',
   tg: 'Telegram', wh: 'Webhook', bot: '机器人', chat: '聊天', token: '令牌', set: '已设置', notset: '未设置',
   tokenPh: '来自 @BotFather 的机器人令牌（123456:ABC…）', tokenKeep: '新令牌（留空则保留）', save: '保存',
@@ -30,7 +30,7 @@ const T = {
   secretPh: '签名密钥（可选，至少 8 个字符）', secretKeep: '新密钥（留空则保留）', noSecret: '移除密钥',
   payload: '请求内容', sigHelp: '每个事件以 JSON 方式 POST（超时 10 秒，重试 2 次，不跟随重定向）。设置密钥后，请求头 X-UZ-Signature 为 sha256=<用密钥对原始请求体计算的 HMAC-SHA256 十六进制值>。请先校验签名再信任请求。',
   needToken: '请先保存机器人令牌。', needChat: '尚无聊天 — 请先检测。',
-  ev: {sms_received: '收到短信', sms_command: '短信指令', sms_rejected: '拒绝的指令', uptime_change: '在线状态变化', lte_up: 'LTE 已连接', test: '测试'}},
+  ev: {sms_received: '收到短信', sms_command: '短信指令', sms_rejected: '拒绝的指令', call_incoming: '来电', call_missed: '未接来电', call_trigger: '来电触发', uptime_change: '在线状态变化', lte_up: 'LTE 已连接', test: '测试'}},
 };
 const t = k => (T[UZ.lang] || T.en)[k] ?? T.en[k];
 const E = UZ.esc;

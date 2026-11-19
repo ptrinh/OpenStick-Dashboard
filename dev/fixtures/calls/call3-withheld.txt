@@ -1,0 +1,10 @@
+call.dbus-path                          : /org/freedesktop/ModemManager1/Call/3
+call.properties.number                  : --
+call.properties.direction               : incoming
+call.properties.multiparty              : no
+call.properties.state                   : ringing-in
+call.properties.state-reason            : incoming-new
+call.properties.audio-port              : --
+call.properties.audio-format.encoding   : --
+call.properties.audio-format.resolution : --
+call.properties.audio-format.rate       : --

@@ -1,0 +1,3 @@
+modem.voice.call.length   : 2
+modem.voice.call.value[1] : /org/freedesktop/ModemManager1/Call/0
+modem.voice.call.value[2] : /org/freedesktop/ModemManager1/Call/1

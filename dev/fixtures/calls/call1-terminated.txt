@@ -1,0 +1,10 @@
+call.dbus-path                          : /org/freedesktop/ModemManager1/Call/1
+call.properties.number                  : 0987654321
+call.properties.direction               : incoming
+call.properties.multiparty              : no
+call.properties.state                   : terminated
+call.properties.state-reason            : terminated
+call.properties.audio-port              : --
+call.properties.audio-format.encoding   : --
+call.properties.audio-format.resolution : --
+call.properties.audio-format.rate       : --

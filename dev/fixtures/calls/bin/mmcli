@@ -1,0 +1,46 @@
+#!/usr/bin/env python3
+"""Fake mmcli for dev/tests/calls_test.py. State lives in $FAKE_MM_DIR:
+  list / modem / call-<n> / create / ussd-out / ussd-status   → printed for the matching command
+  <verb>.rc                                                   → exit code for that verb (default 0)
+  call-<n>.after-<verb>                                        → replaces call-<n> after that verb (start, hangup)
+Every invocation is appended to $FAKE_MM_DIR/log as a JSON list."""
+import json, os, re, sys
+D = os.environ['FAKE_MM_DIR']; a = sys.argv[1:]
+with open(os.path.join(D, 'log'), 'a') as f: f.write(json.dumps(a) + '\n')
+def out(name):
+    p = os.path.join(D, name)
+    if not os.path.exists(p): sys.stderr.write(f'error: {name} not found\n'); sys.exit(1)
+    sys.stdout.write(open(p).read())
+def rc(verb):
+    try: return int(open(os.path.join(D, verb + '.rc')).read())
+    except OSError: return 0
+def done(verb, n=None):
+    if n is not None:
+        nxt = os.path.join(D, f'call-{n}.after-{verb}')
+        if os.path.exists(nxt): os.replace(nxt, os.path.join(D, f'call-{n}'))
+    c = rc(verb)
+    if c: sys.stderr.write(f'error: {verb} failed\n')
+    sys.exit(c)
+joined = ' '.join(a)
+if '-c' in a:
+    n = re.search(r'(\d+)$', a[a.index('-c') + 1])[1]
+    if '--hangup' in a: done('hangup', n)
+    if '--start' in a: done('start', n)
+    if '--accept' in a: done('accept', n)
+    if rc('call'): done('call')
+    out(f'call-{n}'); sys.exit(0)
+if '--voice-list-calls' in a:
+    if rc('list'): done('list')
+    out('list'); sys.exit(0)
+if any(x.startswith('--voice-create-call=') for x in a):
+    if rc('create'): done('create')
+    out('create'); sys.exit(0)
+if any(x.startswith('--voice-delete-call=') for x in a): done('delete')
+if '--voice-hangup-all' in a: done('hangupall')
+if '--3gpp-ussd-status' in a: out('ussd-status'); sys.exit(0)
+if any(x.startswith('--3gpp-ussd-') for x in a):
+    if rc('ussd'): done('ussd')
+    if '--3gpp-ussd-cancel' in a: print('successfully cancelled USSD session'); sys.exit(0)
+    out('ussd-out'); sys.exit(0)
+if a[-1:] == ['-K']: out('modem'); sys.exit(0)
+sys.stderr.write('fake mmcli: unhandled ' + joined + '\n'); sys.exit(2)

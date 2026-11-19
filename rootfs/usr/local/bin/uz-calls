@@ -1,0 +1,651 @@
+#!/usr/bin/env python3
+"""uz-calls — voice-call policy daemon + CLI for the ModemManager Voice interface (no audio on this stick:
+calls are listed, rejected, hung up and placed, never heard; incoming calls are never answered).
+
+  uz-calls daemon                 poll calls (2 s; 15 s while no SIM / modem not enabled / no Voice), apply policy
+  uz-calls ring <number> [s]      place a call, hang up after s seconds (5–60, default 20) — always hangs up
+  uz-calls alarm                  ring the alarm number from calls.json (rate-limited: once per 30 min) — uz-probe
+  uz-calls hangup-all
+  uz-calls ussd <code>            e.g. *101#   → prints the network reply
+  uz-calls ussd-respond <text>  / uz-calls ussd-cancel
+
+Policy /etc/uz/calls.json (0600; defaults when missing):
+  {"mode": "notify"|"reject_all"|"allow_list", "allow": [...], "block": [...],
+   "triggers": [{"number": "...", "action": "status|lte|wifi_on|wifi_off|ts|reboot", "reply_sms": bool}],
+   "triggers_from_sms_allow": false, "alarm": {"enabled": false, "number": "", "ring_s": 20}, "notify": true}
+  A trigger number "*" means "any number in /etc/uz/sms.allow" and only works with triggers_from_sms_allow.
+  Numbers match on their last 9 digits. A trigger call is rejected (free for the caller) and runs the action.
+Files: /var/lib/uz/calls.jsonl (last 300 calls, 0600), /var/lib/uz/calls-triggers.json (rate limit),
+  /var/lib/uz/calls-alarm.ts, /run/uz-calls.json (daemon state for the dashboard, 0600).
+  Trigger replies are queued in /var/lib/uz/outbox/call-<id>.json {"to","text"} — uz-sms sends them.
+Env overrides (tests): UZ_ETC, UZ_VAR, UZ_RUN, UZ_NOTIFY_BIN.
+Privacy: full numbers go to calls.jsonl, the state file and notifications only; stderr/journal shows ••1234.
+Importing this file has no side effects (uz-web's calls module loads it)."""
+import fcntl, json, os, queue, re, signal, subprocess, sys, threading, time, uuid
+
+NUM_RE = re.compile(r'\+?[0-9]{3,15}')
+USSD_RE = re.compile(r'[*#0-9]{2,30}')
+CALL_PATH_RE = re.compile(r'/org/freedesktop/ModemManager1/Call/\d+')
+MODES = ('notify', 'reject_all', 'allow_list')
+ACTIONS = ('status', 'lte', 'wifi_on', 'wifi_off', 'ts', 'reboot')
+LOG_KEEP = 300
+POLL_S, IDLE_S, MODEM_REFRESH_S = 2, 15, 30
+COOLDOWN_S, RATE_MAX, RATE_WINDOW_S = 60, 20, 3600
+ALARM_GAP_S = 1800
+MAX_LIST, MAX_TRIGGERS = 50, 10
+RING_MIN, RING_MAX, RING_DEFAULT = 5, 60, 20
+BAD_MODEM_STATES = ('failed', 'unknown', 'initializing', 'locked', 'disabled', 'disabling')
+
+def etc(n=''): return os.path.join(os.environ.get('UZ_ETC', '/etc/uz'), n)
+def var(n=''): return os.path.join(os.environ.get('UZ_VAR', '/var/lib/uz'), n)
+def run_dir(n=''): return os.path.join(os.environ.get('UZ_RUN', '/run'), n)
+def state_file(): return run_dir('uz-calls.json')
+def log_file(): return var('calls.jsonl')
+
+def err(msg): print('uz-calls: ' + msg, file=sys.stderr, flush=True)
+
+# ---------------- numbers ----------------
+def clean_number(s):
+    return re.sub(r'[\s\-.()]', '', s) if isinstance(s, str) else ''
+
+def valid_number(s): return isinstance(s, str) and bool(NUM_RE.fullmatch(s))
+
+def tail9(s): return re.sub(r'\D', '', s or '')[-9:]
+
+def same_number(a, b):
+    a, b = tail9(a), tail9(b)
+    return bool(a) and a == b
+
+def matches(num, lst): return any(same_number(num, x) for x in lst or [])
+
+def mask(s):
+    d = re.sub(r'\D', '', s or '')
+    return ('••' + d[-4:]) if d else 'unknown'
+
+# ---------------- mmcli ----------------
+def mm(*args, t=20):
+    """Run mmcli with an argument list → (rc, stdout, stderr). Never raises."""
+    try:
+        p = subprocess.run(['mmcli', *args], capture_output=True, text=True, timeout=t)
+        return p.returncode, p.stdout, p.stderr
+    except FileNotFoundError: return 127, '', 'mmcli not found'
+    except subprocess.TimeoutExpired: return 124, '', 'timed out'
+    except Exception as e: return 1, '', type(e).__name__
+
+def parse_kv(text):
+    """`mmcli -K` → {key: value}; '--' → ''; arrays (`.value[n]`) → list."""
+    d, arr = {}, {}
+    for line in (text or '').splitlines():
+        if ':' not in line: continue
+        k, v = (x.strip() for x in line.split(':', 1))
+        if v == '--': v = ''
+        m = re.fullmatch(r'(.+)\.value\[(\d+)\]', k)
+        if m: arr.setdefault(m[1], []).append((int(m[2]), v)); continue
+        if k.endswith('.length'): arr.setdefault(k[:-7], []); continue
+        d[k] = v
+    for k, items in arr.items(): d[k] = [v for _, v in sorted(items) if v]
+    return d
+
+def parse_call_list(text):
+    return [p for p in CALL_PATH_RE.findall(text or '')]
+
+def parse_call(text):
+    d = parse_kv(text)
+    g = lambda k: d.get('call.properties.' + k, '')
+    return {'path': d.get('call.dbus-path', ''), 'number': g('number'), 'dir': g('direction'),
+            'state': g('state'), 'reason': g('state-reason')}
+
+def modem_info(text):
+    """→ (sim: ready|missing|locked|unknown, modem state)."""
+    d = parse_kv(text)
+    if not d: return 'unknown', 'unknown'
+    st = d.get('modem.generic.state', 'unknown')
+    if not d.get('modem.generic.sim') or d.get('modem.generic.state-failed-reason') in ('sim-missing', 'sim-error'):
+        return 'missing', st
+    if st == 'locked': return 'locked', st
+    return 'ready', st
+
+def short_error(stderr, default='modem error'):
+    lines = [l.strip() for l in (stderr or '').splitlines() if l.strip()]
+    s = lines[-1] if lines else default
+    return re.sub(r'\+?\d{6,}', lambda m: mask(m[0]), s)[:200]
+
+def list_calls():
+    rc, out, e = mm('-m', 'any', '--voice-list-calls', '-K', t=15)
+    return (rc, parse_call_list(out), e)
+
+def call_info(path):
+    rc, out, _ = mm('-c', path, '-K', t=15)
+    return parse_call(out) if rc == 0 else None
+
+def hangup(path):
+    return mm('-c', path, '--hangup', t=20)[0] == 0
+
+def delete_call(path):
+    return mm('-m', 'any', f'--voice-delete-call={path}', t=15)[0] == 0
+
+def hangup_outgoing():
+    """Hang up our own (outgoing, not yet ended) calls only — never an incoming call."""
+    rc, paths, _ = list_calls()
+    for p in paths:
+        c = call_info(p)
+        if c and c['dir'] == 'outgoing' and c['state'] != 'terminated': hangup(p)
+
+def hangup_all():
+    """→ number of hang-up failures (0 = ok)."""
+    if mm('-m', 'any', '--voice-hangup-all', t=20)[0] == 0: return 0
+    rc, paths, _ = list_calls()
+    bad = 0
+    for p in paths:
+        c = call_info(p)
+        if c and c['state'] != 'terminated' and not hangup(p): bad += 1
+    return bad
+
+# ---------------- files ----------------
+def write_private(path, text):
+    os.makedirs(os.path.dirname(path) or '.', exist_ok=True)
+    tmp = f'{path}.{os.getpid()}.tmp'
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, 'w') as f: f.write(text)
+    os.replace(tmp, path)
+
+def read_json(path, default):
+    try:
+        with open(path) as f: return json.load(f)
+    except Exception: return default
+
+_LOG_LOCK = threading.Lock()
+def append_log(entry):
+    with _LOG_LOCK:
+        try:
+            try:
+                with open(log_file()) as f: old = f.read().splitlines()[-(LOG_KEEP - 1):]
+            except FileNotFoundError: old = []
+            old.append(json.dumps(entry, ensure_ascii=False, separators=(',', ':')))
+            write_private(log_file(), '\n'.join(old) + '\n')
+        except Exception as e: err(f'log error {type(e).__name__}')
+
+def read_log(limit=LOG_KEEP):
+    out = []
+    try:
+        with open(log_file()) as f: lines = f.read().splitlines()[-limit:]
+    except OSError: return out
+    for l in lines:
+        try:
+            e = json.loads(l)
+            if isinstance(e, dict): out.append(e)
+        except ValueError: pass
+    return out
+
+# ---------------- policy ----------------
+def default_policy():
+    return {'mode': 'notify', 'allow': [], 'block': [], 'triggers': [], 'triggers_from_sms_allow': False,
+            'alarm': {'enabled': False, 'number': '', 'ring_s': RING_DEFAULT}, 'notify': True}
+
+def normalize_policy(raw, strict=False):
+    """→ (policy, error). strict: first problem is an error (calls-set); lenient: bad entries are dropped (daemon)."""
+    p = default_policy()
+    if not isinstance(raw, dict): return (None, 'policy must be an object') if strict else (p, None)
+    if 'mode' in raw:
+        if raw['mode'] in MODES: p['mode'] = raw['mode']
+        elif strict: return None, 'mode: notify, reject_all or allow_list'
+    for k in ('notify', 'triggers_from_sms_allow'):
+        if k in raw:
+            if isinstance(raw[k], bool): p[k] = raw[k]
+            elif strict: return None, f'{k}: true or false'
+    for k in ('allow', 'block'):
+        v = raw.get(k, [])
+        if not isinstance(v, list):
+            if strict: return None, f'{k}: list of numbers'
+            continue
+        out = []
+        for x in v:
+            n = clean_number(x)
+            if not valid_number(n):
+                if strict: return None, f'{k}: invalid number (optional +, then 3–15 digits)'
+                continue
+            if not matches(n, out): out.append(n)
+        if len(out) > MAX_LIST:
+            if strict: return None, f'{k}: at most {MAX_LIST} numbers'
+            out = out[:MAX_LIST]
+        p[k] = out
+    trs = raw.get('triggers', [])
+    if not isinstance(trs, list):
+        if strict: return None, 'triggers: list'
+        trs = []
+    seen = []
+    for t in trs:
+        if not isinstance(t, dict):
+            if strict: return None, 'triggers: invalid entry'
+            continue
+        n = '*' if t.get('number') == '*' else clean_number(t.get('number'))
+        a, r = t.get('action'), t.get('reply_sms', False)
+        e = None
+        if n != '*' and not valid_number(n): e = 'trigger number: optional +, then 3–15 digits (or * for the SMS allow-list)'
+        elif a not in ACTIONS: e = 'trigger action: ' + ', '.join(ACTIONS)
+        elif not isinstance(r, bool): e = 'trigger reply_sms: true or false'
+        elif n in seen or (n != '*' and matches(n, [x for x in seen if x != '*'])): e = 'trigger numbers must be unique'
+        if e:
+            if strict: return None, e
+            continue
+        seen.append(n); p['triggers'].append({'number': n, 'action': a, 'reply_sms': r})
+    if len(p['triggers']) > MAX_TRIGGERS:
+        if strict: return None, f'at most {MAX_TRIGGERS} triggers'
+        p['triggers'] = p['triggers'][:MAX_TRIGGERS]
+    al = raw.get('alarm')
+    if al is not None:
+        if not isinstance(al, dict):
+            if strict: return None, 'alarm: object'
+        else:
+            en, num, rs = al.get('enabled', False), clean_number(al.get('number', '')), al.get('ring_s', RING_DEFAULT)
+            e = None
+            if not isinstance(en, bool): e = 'alarm enabled: true or false'
+            elif num and not valid_number(num): e = 'alarm number: optional +, then 3–15 digits'
+            elif en and not num: e = 'alarm: a number is required when enabled'
+            elif not isinstance(rs, int) or isinstance(rs, bool) or not RING_MIN <= rs <= RING_MAX: e = f'alarm ring: {RING_MIN}–{RING_MAX} seconds'
+            if e:
+                if strict: return None, e
+            else: p['alarm'] = {'enabled': en, 'number': num, 'ring_s': rs}
+    return p, None
+
+def load_policy():
+    raw = read_json(etc('calls.json'), None)
+    return normalize_policy(raw)[0] if raw is not None else default_policy()
+
+def sms_allow():
+    try:
+        with open(etc('sms.allow')) as f:
+            return [clean_number(l) for l in f if l.strip() and not l.strip().startswith('#') and valid_number(clean_number(l))]
+    except OSError: return []
+
+def decide(policy, number, allow_sms=None):
+    """→ (outcome, trigger). outcome None = let it ring (notify mode or allowed number)."""
+    if number and matches(number, policy['block']): return 'blocked', None
+    if number:
+        for t in policy['triggers']:
+            if t['number'] != '*' and same_number(number, t['number']): return 'trigger', t
+        if policy.get('triggers_from_sms_allow') and matches(number, allow_sms or []):
+            for t in policy['triggers']:
+                if t['number'] == '*': return 'trigger', t
+    if policy['mode'] == 'reject_all': return 'rejected', None
+    if policy['mode'] == 'allow_list' and not (number and matches(number, policy['allow'])): return 'rejected', None
+    return None, None
+
+# ---------------- triggers ----------------
+class Limiter:
+    """Same number+action at most once per COOLDOWN_S; at most RATE_MAX triggers per hour. Persisted (survives reboot)."""
+    def __init__(self, path=None, now=time.time):
+        self.path, self.now = path or var('calls-triggers.json'), now
+    def check(self, number, action):
+        t = self.now()
+        h = [x for x in read_json(self.path, []) if isinstance(x, list) and len(x) == 2
+             and isinstance(x[0], (int, float)) and t - x[0] < RATE_WINDOW_S]
+        key = f'{tail9(number)}:{action}'
+        if any(k == key and t - ts < COOLDOWN_S for ts, k in h): return 'cooldown'
+        if len(h) >= RATE_MAX: return 'rate limit'
+        h.append([int(t), key])
+        try: write_private(self.path, json.dumps(h))
+        except OSError as e: err(f'limiter write failed {type(e).__name__}')
+        return None
+
+def _out(args, t=20):
+    try: return subprocess.run(args, capture_output=True, text=True, timeout=t).stdout.strip()
+    except Exception: return ''
+
+def _rc(args, t=60):
+    try: return subprocess.run(args, capture_output=True, text=True, timeout=t).returncode
+    except Exception: return 1
+
+def _ip(iface):
+    f = _out(['ip', '-4', '-br', 'addr', 'show', iface]).split()
+    return f[2].split('/')[0] if len(f) > 2 else '-'
+
+def short_status():
+    try:
+        with open('/proc/uptime') as f: up = f'{int(float(f.read().split()[0]) // 3600)}h'
+    except Exception: up = '-'
+    mode = '-'
+    try:
+        for l in open(etc('uz.conf')):
+            if l.startswith('UZ_MODE='): mode = l.split('=', 1)[1].strip() or '-'
+    except OSError: pass
+    ts = (_out(['tailscale', 'ip', '-4']).splitlines() or ['-'])[0]
+    return f"wifi {_ip('wlan0')} lte {_ip('wwan0')} ts {ts} mode {mode} up {up}"
+
+def run_action(action):
+    """Same semantics as uz-sms's SMS commands (re-implemented: importing uz-sms has side effects)."""
+    if action == 'status': return short_status()
+    if action in ('wifi_on', 'wifi_off'):
+        a = action[5:]
+        return f'wifi {a}' if _rc(['nmcli', 'radio', 'wifi', a]) == 0 else f'wifi {a} failed'
+    if action == 'lte':
+        if _rc(['systemd-run', '--collect', '--quiet', 'sh', '-c', 'nmcli con down lte; sleep 2; nmcli con up lte']) != 0:
+            _rc(['systemctl', 'restart', 'uz-lte'])
+        return 'lte restarting'
+    if action == 'ts':
+        return 'tailscale restarted' if _rc(['systemctl', 'restart', 'tailscaled']) == 0 else 'tailscale restart failed'
+    if action == 'reboot':
+        return 'rebooting in 10s' if _rc(['systemd-run', '--collect', '--quiet', '--on-active=10', 'systemctl', 'reboot']) == 0 \
+            else 'reboot failed'
+    return 'unknown action'
+
+def queue_sms(to, text):
+    """Queue an SMS for uz-sms (same format as the dashboard's 'sms' action) → file id or None."""
+    if not valid_number(to): return None
+    d = var('outbox'); os.makedirs(d, exist_ok=True)
+    i = 'call-' + uuid.uuid4().hex
+    p = os.path.join(d, i)
+    with open(p + '.json.tmp', 'w') as f: json.dump({'to': to, 'text': str(text)[:300]}, f, ensure_ascii=False)
+    os.replace(p + '.json.tmp', p + '.json')
+    return i
+
+def clean_outbox(max_age=600):
+    """uz-sms leaves <id>.done for the sender to read; ours are never read → remove old ones."""
+    d = var('outbox')
+    try:
+        for f in os.listdir(d):
+            p = os.path.join(d, f)
+            if f.startswith('call-') and f.endswith('.done') and time.time() - os.path.getmtime(p) > max_age: os.remove(p)
+    except OSError: pass
+
+# ---------------- notifications ----------------
+_UN = {}
+def notifier():
+    if 'm' not in _UN:
+        from importlib.machinery import SourceFileLoader
+        from importlib.util import module_from_spec, spec_from_loader
+        here = os.path.dirname(os.path.abspath(__file__))
+        _UN['m'] = None
+        for p in (os.environ.get('UZ_NOTIFY_BIN', ''), '/usr/local/bin/uz-notify', os.path.join(here, 'uz-notify')):
+            if p and os.path.isfile(p):
+                try:
+                    ld = SourceFileLoader('uznotify_calls', p); m = module_from_spec(spec_from_loader('uznotify_calls', ld))
+                    ld.exec_module(m); _UN['m'] = m; break
+                except Exception as e: err(f'uz-notify load failed {type(e).__name__}')
+    return _UN['m']
+
+class AsyncNotify:
+    """Notifications are sent from a worker thread so a slow network never delays a hang-up."""
+    def __init__(self):
+        self.q = queue.Queue(50)
+        threading.Thread(target=self._loop, daemon=True).start()
+    def __call__(self, event, text, data=None):
+        try: self.q.put_nowait((event, text, data))
+        except queue.Full: err('notify queue full, dropped')
+    def _loop(self):
+        while True:
+            ev, text, data = self.q.get()
+            try:
+                m = notifier()
+                if m: m.notify(ev, text, data)
+            except Exception as e: err(f'notify error {type(e).__name__}')
+
+# ---------------- daemon ----------------
+class Daemon:
+    def __init__(self, notify=None, now=time.time, act=None, limiter=None):
+        self.notify = notify or (lambda *a: None)
+        self.now, self.act = now, act or run_action
+        self.limiter = limiter or Limiter(now=now)
+        self.calls = {}                 # path → record
+        self.voice, self.sim, self.modem_state = None, 'unknown', 'unknown'
+        self.modem_t, self.state_t, self.state_last = 0.0, 0.0, None
+        self.log_mtime, self.last_entry = None, None
+
+    # one polling round → seconds until the next one
+    def poll(self):
+        t = self.now()
+        rc, paths, e = list_calls()
+        if rc != 0:
+            if self.voice is not False: err(f'voice unavailable: {short_error(e)}')
+            self.voice = False
+            self._refresh_modem(t, force=True)
+            for p in [p for p in self.calls if not self.calls[p].get('final')]: self.finalize(p, delete=False)
+            self.calls.clear()
+            self.write_state()
+            return IDLE_S
+        if self.voice is not True: err('voice available')
+        self.voice = True
+        self._refresh_modem(t)
+        seen = set()
+        for p in paths:
+            rec = self.calls.get(p)
+            if rec and rec.get('final'): seen.add(p); continue
+            info = call_info(p)
+            if info is None: continue
+            seen.add(p)
+            self.on_call(p, info)
+        for p in list(self.calls):
+            if p not in seen:
+                if not self.calls[p].get('final'): self.finalize(p, delete=False)
+                del self.calls[p]
+        self.write_state()
+        idle = self.sim in ('missing', 'locked') or self.modem_state in BAD_MODEM_STATES
+        return IDLE_S if idle and not self.active() else POLL_S
+
+    def _refresh_modem(self, t, force=False):
+        if force or t - self.modem_t >= MODEM_REFRESH_S:
+            rc, out, _ = mm('-m', 'any', '-K', t=15)
+            self.sim, self.modem_state = modem_info(out) if rc == 0 else ('unknown', 'unknown')
+            self.modem_t = t
+
+    def active(self):
+        return [dict(path=p, number=r['number'], dir=r['dir'], state=r['state'], since=r['first'])
+                for p, r in self.calls.items() if not r.get('final') and r['state'] != 'terminated']
+
+    def on_call(self, path, info):
+        st, d, num = info['state'], info['dir'], info['number']
+        rec = self.calls.get(path)
+        if rec is None:
+            rec = self.calls[path] = {'number': num, 'dir': d, 'state': st, 'first': int(self.now()),
+                                      'answered': st in ('active', 'held'), 'logged': False}
+            if d == 'incoming' and st in ('ringing-in', 'waiting'): self.on_incoming(path, rec)
+        else:
+            rec['state'] = st
+            if num and not rec['number']: rec['number'] = num
+        if st in ('active', 'held'): rec['answered'] = True
+        if st == 'terminated': self.finalize(path)
+
+    def log(self, rec, outcome, **extra):
+        e = {'ts': int(self.now()), 'number': rec['number'], 'dir': 'in' if rec['dir'] == 'incoming' else 'out', 'outcome': outcome}
+        e.update({k: v for k, v in extra.items() if v not in (None, '')})
+        append_log(e); rec['logged'] = True
+        return e
+
+    def on_incoming(self, path, rec):
+        pol, num = load_policy(), rec['number']
+        outcome, trig = decide(pol, num, sms_allow() if pol.get('triggers_from_sms_allow') else [])
+        shown = num or 'unknown number'
+        if outcome is None:
+            err(f'incoming call from {mask(num)}')
+            if pol['notify']:
+                self.notify('call_incoming', f'📞 Incoming call from {shown}', {'number': num, 'state': rec['state']})
+            return
+        ok = hangup(path)
+        rec['outcome'] = outcome
+        if outcome == 'trigger':
+            a = trig['action']
+            why = self.limiter.check(num, a)
+            if why:
+                reply = f'skipped ({why})'
+                err(f'trigger {a} from {mask(num)} skipped: {why}')
+            else:
+                try: reply = str(self.act(a))[:300]
+                except Exception as e: reply = f'error ({type(e).__name__})'
+                err(f'trigger {a} from {mask(num)}: done')
+            sms = None
+            if trig['reply_sms'] and not why:
+                try: sms = queue_sms(num, f'{a}: {reply}')
+                except OSError as e: err(f'outbox error {type(e).__name__}')
+            self.log(rec, 'trigger', action=a, result=reply, hangup=None if ok else 'failed', sms='queued' if sms else None)
+            self.notify('call_trigger', f'⚡ Call trigger from {shown}: {a}\n→ {reply}',
+                        {'number': num, 'action': a, 'result': reply, 'reply_sms': bool(sms)})
+            return
+        err(f'{outcome} call from {mask(num)}' + ('' if ok else ' (hang-up failed)'))
+        self.log(rec, outcome, hangup=None if ok else 'failed')
+        if pol['notify']:
+            label = 'Blocked' if outcome == 'blocked' else 'Rejected'
+            self.notify('call_incoming', f'📵 {label} call from {shown}', {'number': num, 'outcome': outcome})
+
+    def finalize(self, path, delete=True):
+        rec = self.calls.get(path)
+        if not rec or rec.get('final'): return
+        rec['final'] = True; rec['state'] = 'terminated'
+        if rec['dir'] == 'incoming' and not rec['logged']:
+            outcome = 'answered' if rec['answered'] else 'missed'
+            self.log(rec, outcome)
+            err(f'{outcome} call from {mask(rec["number"])}')
+            if outcome == 'missed' and load_policy()['notify']:
+                self.notify('call_missed', f'☎️ Missed call from {rec["number"] or "unknown number"}', {'number': rec['number']})
+        if delete and rec['dir'] == 'incoming': delete_call(path)   # outgoing: `uz-calls ring` deletes its own
+
+    def write_state(self, force=False):
+        try: mt = os.stat(log_file()).st_mtime_ns
+        except OSError: mt = None
+        if mt != self.log_mtime:
+            log = read_log(1); self.log_mtime, self.last_entry = mt, (log[-1] if log else None)
+        st = {'voice': bool(self.voice), 'sim': self.sim, 'modem': self.modem_state, 'active_calls': self.active(),
+              'last': self.last_entry}
+        t = self.now()
+        if not force and st == self.state_last and t - self.state_t < 30: return
+        st['ts'] = int(t)
+        try: write_private(state_file(), json.dumps(st, ensure_ascii=False))
+        except OSError as e: err(f'state write failed {type(e).__name__}')
+        self.state_last, self.state_t = {k: v for k, v in st.items() if k != 'ts'}, t
+
+def daemon():
+    stop = threading.Event()
+    signal.signal(signal.SIGTERM, lambda *a: stop.set())
+    d = Daemon(notify=AsyncNotify())
+    err('started')
+    while not stop.is_set():
+        try: wait = d.poll()
+        except Exception as e: err(f'poll error {type(e).__name__}'); wait = IDLE_S
+        try: clean_outbox()
+        except Exception: pass
+        stop.wait(wait)
+    try: os.remove(state_file())
+    except OSError: pass
+    return 0
+
+# ---------------- ring / alarm ----------------
+class _Stop(Exception): pass
+
+def ring(number, seconds=RING_DEFAULT, sleep=time.sleep, source='ring'):
+    """Place a call and hang up after `seconds` (or as soon as it is answered / ends). Always hangs up.
+    → (ok, outcome) with outcome answered | unanswered | failed."""
+    number = clean_number(number)
+    if not valid_number(number): return False, 'invalid number'
+    if not isinstance(seconds, int) or not RING_MIN <= seconds <= RING_MAX: return False, f'seconds: {RING_MIN}–{RING_MAX}'
+    path, outcome, why = None, 'failed', ''
+    try:
+        rc, out, e = mm('-m', 'any', f'--voice-create-call=number={number}', t=30)
+        m = CALL_PATH_RE.search(out or '')
+        if rc != 0 or not m: why = short_error(e, 'could not create the call'); return False, why
+        path = m[0]
+        rc, _, e = mm('-c', path, '--start', t=30)
+        if rc != 0: why = short_error(e, 'could not start the call'); return False, why
+        outcome, gone = 'unanswered', 0
+        for _ in range(seconds):
+            sleep(1)
+            c = call_info(path)
+            if c is None:
+                gone += 1
+                if gone >= 2: break
+                continue
+            gone = 0
+            if c['state'] in ('active', 'held'): outcome = 'answered'; break
+            if c['state'] == 'terminated': break
+        return True, outcome
+    finally:
+        if path:
+            if not hangup(path):
+                c = call_info(path)
+                if c is not None and c['state'] != 'terminated':
+                    err('hang-up failed, retrying on all outgoing calls'); hangup_outgoing()
+            delete_call(path)
+        elif outcome == 'failed':
+            hangup_outgoing()          # a half-created call must not keep ringing
+        e = {'ts': int(time.time()), 'number': number, 'dir': 'out', 'outcome': outcome, 'source': source}
+        if why: e['error'] = why
+        append_log(e)
+        err(f'{source} {mask(number)}: {outcome}' + (f' ({why})' if why else ''))
+
+def alarm(now=None, ringer=ring):
+    """Ring the alarm number when enabled; at most once per ALARM_GAP_S (flock-protected stamp file)."""
+    now = time.time() if now is None else now
+    a = load_policy()['alarm']
+    if not a['enabled'] or not valid_number(a['number']): return 'disabled'
+    p = var('calls-alarm.ts'); os.makedirs(os.path.dirname(p), exist_ok=True)
+    fd = os.open(p, os.O_RDWR | os.O_CREAT, 0o600)
+    with os.fdopen(fd, 'r+') as f:
+        fcntl.flock(f, fcntl.LOCK_EX)
+        try: last = float(f.read().strip())
+        except ValueError: last = None             # never rang (or garbage)
+        if last is not None and 0 <= now - last < ALARM_GAP_S: return 'rate limited'
+        f.seek(0); f.truncate(); f.write(str(int(now))); f.flush()
+    ringer(a['number'], a['ring_s'], source='alarm')
+    return 'rang'
+
+# ---------------- USSD ----------------
+def valid_ussd(code): return isinstance(code, str) and bool(USSD_RE.fullmatch(code))
+
+def valid_ussd_text(s):
+    return isinstance(s, str) and 1 <= len(s) <= 160 and all(c.isprintable() for c in s)
+
+def parse_ussd_reply(out):
+    m = re.search(r"reply from network:\s*'(.*)'\s*$", out or '', re.S)
+    return m[1] if m else (out or '').strip()
+
+def ussd_state():
+    rc, out, _ = mm('-m', 'any', '--3gpp-ussd-status', '-K', t=10)
+    return parse_kv(out).get('modem.3gpp.ussd.status', 'unknown') if rc == 0 else 'unknown'
+
+def _ussd(arg):
+    rc, out, e = mm('-m', 'any', arg, t=25)
+    if rc == 127: return {'error': 'not available on this host'}
+    if rc == 124: return {'error': 'USSD timed out (25 s)'}
+    if rc != 0: return {'error': short_error(e, 'USSD failed')}
+    reply, st = parse_ussd_reply(out), ussd_state()
+    return {'out': reply or 'sent', 'reply': reply, 'state': st, 'expects_input': st == 'user-response'}
+
+def ussd(code):
+    if not valid_ussd(code): return {'error': 'USSD code: 2–30 of * # 0-9, e.g. *101#'}
+    return _ussd(f'--3gpp-ussd-initiate={code}')
+
+def ussd_respond(text):
+    if not valid_ussd_text(text): return {'error': 'response: 1–160 printable characters'}
+    return _ussd(f'--3gpp-ussd-respond={text}')
+
+def ussd_cancel():
+    rc, _, e = mm('-m', 'any', '--3gpp-ussd-cancel', t=15)
+    if rc == 127: return {'error': 'not available on this host'}
+    return {'out': 'USSD session cancelled', 'state': 'idle'} if rc == 0 else {'error': short_error(e, 'cancel failed')}
+
+# ---------------- CLI ----------------
+def _term(*_): raise SystemExit(143)
+
+def main(argv):
+    cmd = argv[0] if argv else ''
+    if cmd == 'daemon': return daemon()
+    if cmd == 'ring':
+        if len(argv) not in (2, 3) or (len(argv) == 3 and not argv[2].isdigit()):
+            print('usage: uz-calls ring <number> [seconds 5–60]', file=sys.stderr); return 2
+        for s in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP): signal.signal(s, _term)
+        ok, info = ring(argv[1], int(argv[2]) if len(argv) == 3 else RING_DEFAULT)
+        print(info); return 0 if ok else 1
+    if cmd == 'alarm':
+        for s in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP): signal.signal(s, _term)
+        print(alarm()); return 0
+    if cmd == 'hangup-all':
+        bad = hangup_all(); print('ok' if not bad else f'{bad} hang-up(s) failed'); return 0 if not bad else 1
+    if cmd in ('ussd', 'ussd-respond', 'ussd-cancel'):
+        if cmd == 'ussd-cancel': r = ussd_cancel()
+        elif len(argv) < 2: print(f'usage: uz-calls {cmd} <{"code" if cmd == "ussd" else "text"}>', file=sys.stderr); return 2
+        else: r = ussd(argv[1]) if cmd == 'ussd' else ussd_respond(' '.join(argv[1:]))
+        if 'error' in r: print(r['error'], file=sys.stderr); return 1
+        print(r['out'] + ('\n(the network expects a response: uz-calls ussd-respond <text>)' if r.get('expects_input') else ''))
+        return 0
+    print(__doc__); return 0 if cmd in ('-h', '--help', 'help') else 2
+
+if __name__ == '__main__':
+    sys.exit(main(sys.argv[1:]))
