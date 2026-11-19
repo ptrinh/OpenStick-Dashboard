@@ -162,7 +162,8 @@ def status():
         'tx_mb': round(int(rd(f'/sys/class/net/{wan}/statistics/tx_bytes', '0')) / 1e6, 1),
         'disk': disk(), 'net': cache.get('net', {}),
         'ts': {k: ts_info().get(k, '') for k in ('state', 'login', 'dns', 'tailnet', 'auth_url')},
-        'paired': paired(), 'local_urls': local_urls(), 'exit_node': exit_node(),
+        'paired': paired(), 'local_urls': local_urls(), 'exit_node': exit_node(), 'usb_share': conf().get('UZ_USB_SHARE', '0') == '1',
+        'settings': modules_status(), 'ui_modules': ui_modules(),
         'gps': (lambda: json.load(open('/var/lib/uz/gps.json')) if os.path.exists('/var/lib/uz/gps.json') else None)(),
         'uplink': sh("ip -4 route show default | sort -t' ' -k9 -n | awk '{for(i=1;i<=NF;i++) if($i==\"dev\") {print $(i+1); exit}}'", 5),
         'leds': {l.split()[0]: dict(kv.split('=', 1) for kv in l.split()[1:]) for l in sh('uz-led status', 5).splitlines() if l.strip()},
@@ -176,6 +177,62 @@ def status():
         'log': sh(f"journalctl {'-u ModemManager' if MM else '-u uz-lte'} -u uz-sms -n 25 --no-pager -o short-iso 2>/dev/null | cut -c12-", 8),
     }
 
+# ---------- settings modules: /usr/local/lib/uz/settings/<name>.py + /usr/local/share/uz/settings/<name>.js ----------
+MOD_DIR = os.environ.get('UZ_MOD_DIR', '/usr/local/lib/uz/settings')
+UI_DIR = os.environ.get('UZ_UI_DIR', '/usr/local/share/uz/settings')
+INDEX = os.environ.get('UZ_INDEX', '/usr/local/share/uz/index.html')
+MODULES, MOD_ACTIONS = {}, {}
+
+def set_conf(key, value):
+    """Set KEY=value in /etc/uz/uz.conf (adds the line if missing)."""
+    if not re.fullmatch(r'UZ_[A-Z0-9_]+', key) or '\n' in str(value): raise ValueError('bad conf key/value')
+    lines = rd('/etc/uz/uz.conf').splitlines(); out, done = [], False
+    for l in lines:
+        if re.match(rf'{key}=', l): out.append(f'{key}={value}'); done = True
+        else: out.append(l)
+    if not done: out.append(f'{key}={value}')
+    tmp = '/etc/uz/uz.conf.tmp'; open(tmp, 'w').write('\n'.join(out) + '\n'); os.replace(tmp, '/etc/uz/uz.conf')
+
+def write_secret(path, text):
+    fd = os.open(path + '.tmp', os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, 'w') as f: f.write(text)
+    os.replace(path + '.tmp', path)
+
+class Ctx:
+    """Helpers handed to settings modules."""
+    sh = staticmethod(lambda cmd, t=25: sh(cmd, t)); rd = staticmethod(lambda p, d='': rd(p, d))
+    run_bg = staticmethod(lambda cmd: run_bg(cmd)); conf = staticmethod(lambda: conf())
+    set_conf = staticmethod(lambda k, v: set_conf(k, v)); write_secret = staticmethod(lambda p, t: write_secret(p, t))
+    nm_get = staticmethod(lambda *a: nm_get(*a)); cache = cache
+
+def load_modules():
+    import importlib.util
+    if not os.path.isdir(MOD_DIR): return
+    for f in sorted(os.listdir(MOD_DIR)):
+        if not re.fullmatch(r'[a-z0-9_]+\.py', f): continue
+        name = f[:-3]
+        try:
+            spec = importlib.util.spec_from_file_location(f'uzmod_{name}', os.path.join(MOD_DIR, f))
+            m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+            if hasattr(m, 'init'): m.init(Ctx)
+            MODULES[name] = m
+            for act, fn in getattr(m, 'ACTIONS', {}).items():
+                if act in MOD_ACTIONS: print(f'uz-web: duplicate action {act} in {name}', file=sys.stderr); continue
+                MOD_ACTIONS[act] = fn
+        except Exception as e:
+            print(f'uz-web: module {name} failed: {type(e).__name__}: {e}', file=sys.stderr)
+
+def modules_status():
+    out = {}
+    for name, m in MODULES.items():
+        if hasattr(m, 'status'):
+            try: out[name] = m.status(Ctx)
+            except Exception as e: out[name] = {'error': type(e).__name__}
+    return out
+
+def ui_modules():
+    return sorted(f[:-3] for f in os.listdir(UI_DIR) if re.fullmatch(r'[a-z0-9_-]+\.js', f)) if os.path.isdir(UI_DIR) else []
+
 def run_bg(cmd):
     subprocess.Popen(['systemd-run', '--collect', '--quiet', 'sh', '-c', cmd] if not DEV else ['sh', '-c', cmd],
                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -188,7 +245,8 @@ IMG = STORES[0][0]
 NAME_RE = re.compile(r'[A-Za-z0-9][A-Za-z0-9._-]{0,79}')
 
 def store_free(d, keep):
-    os.makedirs(d, exist_ok=True); st = os.statvfs(d)
+    try: os.makedirs(d, exist_ok=True); st = os.statvfs(d)
+    except OSError: return 0
     return max(0, st.f_bavail * st.f_frsize - keep * 1048576)
 
 def free_bytes():
@@ -218,6 +276,7 @@ def disk():
 
 def images():
     out = []
+    if DEV and not os.path.isdir(STORES[0][0]): return out
     for d, _ in STORES:
         if os.path.isdir(d):
             out += [{'name': f, 'mb': round(os.path.getsize(os.path.join(d, f)) / 1048576, 1)}
@@ -321,6 +380,11 @@ def action(a, body):
         if r.returncode: os.remove(p); return {'error': 'mkfs.vfat failed'}
         return {'out': f'created {mb} MB FAT drive'}
     if a == 'gadget' and body.get('fn') in ('hid', 'hid-off', 'reset'): run_bg(f"uz-gadget {body['fn']}"); return {'out': f"gadget {body['fn']}"}
+    if a == 'usb-share':
+        on = bool(body.get('on'))
+        sh(f"sed -i 's/^UZ_USB_SHARE=[01]/UZ_USB_SHARE={1 if on else 0}/' /etc/uz/uz.conf; grep -q '^UZ_USB_SHARE=' /etc/uz/uz.conf || echo 'UZ_USB_SHARE={1 if on else 0}' >> /etc/uz/uz.conf", 5)
+        run_bg('/usr/local/bin/uz-usbnet')
+        return {'out': 'USB computer may use the stick\'s Internet' if on else 'USB link is local-only (no gateway)'}
     if a == 'exit-node':
         on = bool(body.get('on'))
         r = subprocess.run(['tailscale', 'set', f'--advertise-exit-node={"true" if on else "false"}'], capture_output=True, text=True, timeout=20)
@@ -350,7 +414,7 @@ def action(a, body):
             return {'qr': svg[svg.find('<svg'):] if '<svg' in svg else ''}
         except Exception: return {'qr': ''}
     if a == 'hotspot-psk':
-        psk = rd('/etc/uz/hotspot.psk'); ssid = nm_get('802-11-wireless.ssid', 'connection', 'show', 'uz-hotspot') or 'UZ801'
+        psk = rd('/etc/uz/hotspot.psk'); ssid = nm_get('802-11-wireless.ssid', 'connection', 'show', 'uz-hotspot') or rd('/etc/uz/hotspot.ssid') or 'UZ801'
         q = lambda x: re.sub(r'([\\;,:"])', r'\\\1', x)          # escape for the WIFI: QR payload
         svg = ''
         try:
@@ -360,16 +424,27 @@ def action(a, body):
         except Exception: pass
         return {'out': psk, 'ssid': ssid, 'qr': svg}
     if a == 'hotspot-set':
-        psk = str(body.get('psk', ''))
-        if not (8 <= len(psk) <= 63) or not all(32 <= ord(c) < 127 for c in psk): return {'error': 'Wi-Fi password: 8–63 printable ASCII characters'}
-        fd = os.open('/etc/uz/hotspot.psk.tmp', os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-        with os.fdopen(fd, 'w') as f: f.write(psk)
-        os.replace('/etc/uz/hotspot.psk.tmp', '/etc/uz/hotspot.psk')
+        psk, ssid = str(body.get('psk', '') or ''), str(body.get('ssid', '') or '').strip()
+        if not psk and not ssid: return {'error': 'nothing to change'}
+        if psk and (not (8 <= len(psk) <= 63) or not all(32 <= ord(c) < 127 for c in psk)):
+            return {'error': 'Wi-Fi password: 8–63 printable ASCII characters'}
+        if ssid and (not (1 <= len(ssid.encode()) <= 32) or any(ord(c) < 32 or ord(c) == 127 for c in ssid)):
+            return {'error': 'network name: 1–32 bytes, no control characters'}
+        def put(path, val):
+            fd = os.open(path + '.tmp', os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, 'w') as f: f.write(val)
+            os.replace(path + '.tmp', path)
+        if psk: put('/etc/uz/hotspot.psk', psk)
+        if ssid: put('/etc/uz/hotspot.ssid', ssid)
         if nm_get('connection.id', 'connection', 'show', 'uz-hotspot'):
-            subprocess.run(['nmcli', 'connection', 'modify', 'uz-hotspot', 'wifi-sec.psk', psk], capture_output=True, timeout=15)
+            args = ['nmcli', 'connection', 'modify', 'uz-hotspot']
+            if ssid: args += ['802-11-wireless.ssid', ssid]
+            if psk: args += ['wifi-sec.psk', psk]
+            r = subprocess.run(args, capture_output=True, text=True, timeout=15)
+            if r.returncode: return {'error': (r.stderr or 'nmcli failed').strip()[:200]}
             if 'uz-hotspot' in sh('nmcli -t -f NAME con show --active', 5).splitlines():
                 run_bg('nmcli connection up uz-hotspot')
-        return {'out': 'Wi-Fi password updated'}
+        return {'out': ' & '.join(x for x in ('network name' if ssid else '', 'password' if psk else '') if x) + ' updated'}
     if a == 'sms-pin-set':
         pin = str(body.get('pin', ''))
         if not re.fullmatch(r'\d{4,8}', pin): return {'error': 'PIN: 4–8 digits'}
@@ -430,7 +505,7 @@ class H(BaseHTTPRequestHandler):
         self.send_header('Content-Type', ctype); self.send_header('Cache-Control', 'no-store')
         self.send_header('X-Frame-Options', 'DENY'); self.send_header('X-Content-Type-Options', 'nosniff')
         self.send_header('Referrer-Policy', 'no-referrer')
-        self.send_header('Content-Security-Policy', "default-src 'self'; script-src 'unsafe-inline'; style-src 'unsafe-inline'")
+        self.send_header('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'unsafe-inline'")
         if cookie is not None:
             age = wa.SESSION_TTL if cookie else 0
             self.send_header('Set-Cookie', f'uz_s={cookie}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age={age}')
@@ -446,8 +521,13 @@ class H(BaseHTTPRequestHandler):
         if not mode:
             return self.deny(403, 'Forbidden. This stick is paired with Tailscale — open it through your tailnet.' if paired() else 'forbidden')
         if self.path == '/':
-            page = rd('/usr/local/share/uz/index.html') or PAGE
+            page = rd(INDEX) or PAGE
             return self.send(200, page.encode(), 'text/html; charset=utf-8')
+        mm = re.fullmatch(r'/ui/([a-z0-9_-]+)\.js', self.path)
+        if mm:
+            if not self.unlocked(mode): return self.send(401, {'error': 'locked'})
+            js = rd(os.path.join(UI_DIR, mm[1] + '.js'))
+            return self.send(200, js.encode(), 'text/javascript; charset=utf-8') if js else self.deny(404, 'not found')
         if self.path == '/api/status':
             if not self.unlocked(mode): return self.send(401, self.locked_status(mode))
             st = status(); st['passkeys'] = {'available': bool(wa), 'count': len(wa.load()) if wa else 0, 'https': mode == 'ts'}
@@ -504,6 +584,8 @@ class H(BaseHTTPRequestHandler):
                     tok = wa.login_finish(rp, body); return self.send(200, {'out': 'signed in'}, cookie=tok)
                 if mode == 'local' and name in ('ts-login', 'qr'): return self.send(200, action(name, body))
                 return self.send(401, {'error': 'locked — sign in with a passkey'})
+            if name in MOD_ACTIONS:
+                return self.send(200, MOD_ACTIONS[name](body, Ctx) or {'out': 'ok'})
             if name.startswith('pk-'):
                 if not wa: return self.send(200, {'error': 'passkeys unavailable (python3-cryptography missing)'})
                 if name == 'pk-list': return self.send(200, {'list': wa.public_list()})
@@ -529,6 +611,7 @@ class H(BaseHTTPRequestHandler):
 PAGE = '<!doctype html><title>UZ801</title><p>UI file /usr/local/share/uz/index.html is missing.</p>'
 
 if __name__ == '__main__':
+    load_modules()
     if not DEV:
         threading.Thread(target=slow_loop, daemon=True).start()
         threading.Thread(target=net_loop, daemon=True).start()

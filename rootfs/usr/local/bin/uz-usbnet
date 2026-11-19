@@ -1,0 +1,28 @@
+#!/bin/sh
+# uz-usbnet apply — USB network for the computer the stick is plugged into.
+#  UZ_USB_SHARE=0 (default): give the computer an address only (no router/DNS), so it keeps
+#                             using its own Internet and talks to the stick at 192.168.5.1.
+#  UZ_USB_SHARE=1           : NetworkManager "shared" mode: the computer may route through the stick.
+. /etc/uz/uz.conf 2>/dev/null
+nmcli -g connection.id connection show usb >/dev/null 2>&1 || exit 0     # only on images with the NM 'usb' profile (OpenStick)
+ADDR=$(nmcli -g ipv4.addresses connection show usb | cut -d, -f1); ADDR=${ADDR:-192.168.5.1/24}
+NET=${ADDR%.*}; WANT=$([ "${UZ_USB_SHARE:-0}" = 1 ] && echo shared || echo manual)
+if [ "$(nmcli -g ipv4.method connection show usb)" != "$WANT" ]; then
+  nmcli connection modify usb ipv4.method $WANT ipv4.addresses "$ADDR" ipv4.never-default yes
+  nmcli connection up usb >/dev/null 2>&1
+fi
+if [ "$WANT" = manual ]; then
+  cat > /run/uz-udhcpd.conf <<CONF
+start ${NET}.10
+end ${NET}.254
+interface usb0
+lease_file /run/uz-udhcpd.leases
+option subnet 255.255.255.0
+option lease 3600
+CONF
+  touch /run/uz-udhcpd.leases
+  systemctl restart uz-usb-dhcpd.service
+else
+  systemctl stop uz-usb-dhcpd.service 2>/dev/null
+fi
+echo "usb: $WANT"

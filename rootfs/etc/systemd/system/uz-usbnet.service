@@ -1,0 +1,11 @@
+[Unit]
+Description=UZ801 USB network policy (share Internet with the USB computer or not)
+After=NetworkManager.service
+Wants=NetworkManager.service
+[Service]
+Type=oneshot
+ExecStartPre=/bin/sleep 5
+ExecStart=/usr/local/bin/uz-usbnet
+RemainAfterExit=yes
+[Install]
+WantedBy=multi-user.target

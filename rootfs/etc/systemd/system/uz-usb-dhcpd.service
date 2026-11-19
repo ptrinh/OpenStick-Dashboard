@@ -1,0 +1,7 @@
+[Unit]
+Description=UZ801 USB DHCP (address only, no router/DNS)
+After=NetworkManager.service
+[Service]
+ExecStart=/bin/busybox udhcpd -f /run/uz-udhcpd.conf
+Restart=on-failure
+RestartSec=5
