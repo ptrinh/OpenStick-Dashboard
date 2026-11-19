@@ -1,7 +1,7 @@
 /* Hotspot (advanced): channel, hidden SSID, connected clients — actions hotspot-adv-get / hotspot-adv-set */
 (() => {
   const T = {
-    en: {title: 'Hotspot (advanced)', desc: 'Travel-mode hotspot: 2.4 GHz only, WPA2. The name and password are under “Wi-Fi password”.',
+    en: {title: 'Hotspot', desc: 'Travel-mode hotspot: network name, password and join QR, plus 2.4 GHz channel and visibility.',
       channel: 'Channel', auto: 'Auto', chHelp: '1, 6 and 11 don’t overlap. 12–13 are not allowed in some countries (e.g. the US) — the hotspot may fail to start there.',
       hidden: 'Hide network name', hiddenD: 'Phones won’t list it; join by typing the name. The QR code may not work for hidden networks on every phone.',
       on: 'On', off: 'Off', security: 'Security', band: 'Band', clients: 'Connected devices', noClients: 'No devices connected.',
@@ -10,7 +10,7 @@
       restart: 'Saving restarts the hotspot: devices (maybe this one) disconnect for a few seconds.',
       save: 'Save', online: 'online', stale: 'idle', unknown: 'name unknown',
       sub: n => n === 1 ? '1 device' : n + ' devices', subOff: 'Off', subCh: 'channel'},
-    vi: {title: 'Hotspot (nâng cao)', desc: 'Hotspot ở chế độ Travel: chỉ 2.4 GHz, WPA2. Tên mạng và mật khẩu nằm ở mục “Mật khẩu Wi-Fi”.',
+    vi: {title: 'Hotspot', desc: 'Hotspot ở chế độ Travel: tên mạng, mật khẩu, mã QR, kênh 2.4 GHz và chế độ ẩn.',
       channel: 'Kênh', auto: 'Tự động', chHelp: 'Kênh 1, 6 và 11 không chồng lấn nhau. Kênh 12–13 bị cấm ở một số nước (vd Mỹ) — ở đó hotspot có thể không lên.',
       hidden: 'Ẩn tên mạng', hiddenD: 'Điện thoại sẽ không thấy mạng trong danh sách; phải gõ tên để kết nối. Mã QR có thể không dùng được với mạng ẩn trên một số máy.',
       on: 'Bật', off: 'Tắt', security: 'Bảo mật', band: 'Băng tần', clients: 'Thiết bị đang kết nối', noClients: 'Chưa có thiết bị nào kết nối.',
@@ -19,7 +19,7 @@
       restart: 'Lưu sẽ khởi động lại hotspot: các thiết bị (có thể cả máy này) mất kết nối vài giây.',
       save: 'Lưu', online: 'đang online', stale: 'đang nghỉ', unknown: 'không rõ tên',
       sub: n => n + ' thiết bị', subOff: 'Tắt', subCh: 'kênh'},
-    zh: {title: '热点（高级）', desc: 'Travel 模式热点：仅 2.4 GHz，WPA2。网络名称和密码在“Wi-Fi 密码”中设置。',
+    zh: {title: '热点', desc: 'Travel 模式热点：网络名称、密码和加入二维码，以及 2.4 GHz 信道和可见性。',
       channel: '信道', auto: '自动', chHelp: '1、6、11 信道互不重叠。12–13 信道在部分国家（如美国）不允许使用——在那里热点可能无法启动。',
       hidden: '隐藏网络名称', hiddenD: '手机不会在列表中显示此网络，需要手动输入名称连接。部分手机扫码可能无法连接隐藏网络。',
       on: '开启', off: '关闭', security: '安全', band: '频段', clients: '已连接设备', noClients: '暂无设备连接。',
@@ -60,6 +60,7 @@
     const note = !r.profile && !r.error ? t('noProfile') : r.active ? t('restart') : '';
     UZ.openSheet('green', 'wifi', UZ.esc(t('title')), UZ.esc(t('desc')),
       `<div id="hs-root">
+       <div class="actions" style="margin:0 0 18px"><button class="btn primary" data-focus data-core="psk">${UZ.esc(UZ.coreT('pskBtn'))}</button></div>
        <div class="kv" style="margin-bottom:18px"><span>${UZ.esc(t('band'))}</span><span>2.4 GHz</span>
          <span>${UZ.esc(t('security'))}</span><span>${UZ.esc(KM[r.key_mgmt || ''] || r.key_mgmt)}</span></div>
        <div class="stat" style="margin-bottom:12px"><div class="l">${UZ.esc(t('channel'))}</div><div class="chips" id="hs-ch" style="margin-top:10px"></div>

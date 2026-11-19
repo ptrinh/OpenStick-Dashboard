@@ -6,7 +6,7 @@
   const NUM = /^\+?[0-9]{6,15}$/;
   const clean = s => String(s || '').replace(/[\s\-.()]/g, '');
   const T = {
-    en: {title: 'SMS allow-list', any: 'Any sender', n: n => n === 1 ? '1 number' : n + ' numbers',
+    en: {title: 'SMS control', any: 'Any sender', n: n => n === 1 ? '1 number' : n + ' numbers',
       desc: 'Who may control the stick by SMS (“<PIN> command”).',
       empty: 'The list is empty: any phone that knows the PIN can send commands.',
       some: 'Only these numbers can send commands; texts from any other number are rejected and reported to Telegram. A number matches on its last 9 digits, so +84 912 345 678 and 0912 345 678 are the same.',
@@ -16,7 +16,7 @@
       ph: 'Phone number, e.g. +84912345678', add: 'Add number', save: 'Save', remove: 'Remove',
       bad: 'Check the highlighted numbers: optional +, then 6–15 digits.', max: 'At most 20 numbers.',
       ignored: 'Lines in the file that are not numbers (removed on save):', loading: 'Loading…'},
-    vi: {title: 'Danh sách SMS được phép', any: 'Mọi số', n: n => n + ' số',
+    vi: {title: 'Điều khiển SMS', any: 'Mọi số', n: n => n + ' số',
       desc: 'Những số được điều khiển stick bằng SMS (“<PIN> lệnh”).',
       empty: 'Danh sách trống: điện thoại nào biết PIN cũng gửi lệnh được.',
       some: 'Chỉ các số này được gửi lệnh; tin từ số khác bị từ chối và báo về Telegram. So khớp theo 9 chữ số cuối, nên +84 912 345 678 và 0912 345 678 là một.',
@@ -26,7 +26,7 @@
       ph: 'Số điện thoại, vd +84912345678', add: 'Thêm số', save: 'Lưu', remove: 'Xoá',
       bad: 'Kiểm tra các số được đánh dấu: có thể có dấu +, rồi 6–15 chữ số.', max: 'Tối đa 20 số.',
       ignored: 'Các dòng trong file không phải số (sẽ bị xoá khi lưu):', loading: 'Đang tải…'},
-    zh: {title: '短信白名单', any: '任何号码', n: n => n + ' 个号码',
+    zh: {title: '短信控制', any: '任何号码', n: n => n + ' 个号码',
       desc: '允许通过短信（“<PIN> 命令”）控制设备的号码。',
       empty: '名单为空：任何知道 PIN 的手机都能发送命令。',
       some: '只有这些号码可以发送命令；其他号码的命令会被拒绝并通知到 Telegram。按号码最后 9 位匹配，所以 +84 912 345 678 与 0912 345 678 视为同一号码。',
@@ -59,7 +59,7 @@
     info = r; nums = (r.numbers || []).slice();
     const ign = (r.ignored || []).length ? `<p style="color:var(--orange);margin:0 0 12px">${UZ.esc(t('ignored'))} ${r.ignored.map(x => `<code>${UZ.esc(x)}</code>`).join(' ')}</p>` : '';
     UZ.openSheet('gray', 'lock', UZ.esc(t('title')), UZ.esc(t('desc')),
-      `${r.pin_set ? '' : `<p style="color:var(--orange);margin:0 0 12px">${UZ.esc(t('noPin'))}</p>`}
+      `<div class="actions" style="margin:0 0 18px"><button class="btn primary" data-focus data-core="pin">${UZ.esc(UZ.coreT('pinBtn'))}</button></div>${r.pin_set ? '' : `<p style="color:var(--orange);margin:0 0 12px">${UZ.esc(t('noPin'))}</p>`}
        <p id="smsa-explain" style="color:var(--dim);margin:0 0 16px"></p>${ign}
        <div id="smsa-rows"></div>
        <div class="actions" style="margin-top:6px"><button class="btn sm" data-focus id="smsa-add">+ ${UZ.esc(t('add'))}</button></div>
