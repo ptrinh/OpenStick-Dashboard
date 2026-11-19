@@ -1,0 +1,10 @@
+#!/bin/sh
+# zram swap: compressed swap in RAM (no eMMC wear). Size = 60% of RAM, lz4.
+modprobe zram num_devices=1 || exit 0
+[ -e /sys/block/zram0 ] || exit 0
+swapoff /dev/zram0 2>/dev/null; echo 1 > /sys/block/zram0/reset 2>/dev/null
+ALG=lz4; grep -qw lz4 /sys/block/zram0/comp_algorithm || ALG=lzo-rle
+echo $ALG > /sys/block/zram0/comp_algorithm
+echo $(( $(awk '/MemTotal/{print $2}' /proc/meminfo) * 6 / 10 ))K > /sys/block/zram0/disksize
+mkswap /dev/zram0 >/dev/null && swapon -p 100 /dev/zram0
+sysctl -q -w vm.swappiness=100 vm.page-cluster=0

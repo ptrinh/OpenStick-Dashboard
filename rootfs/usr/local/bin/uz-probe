@@ -1,0 +1,46 @@
+#!/usr/bin/env python3
+"""Uptime checks over the stick's current uplink (4G / Wi-Fi / USB); Telegram alert only on state change.
+Targets in /etc/uz/probe.list: `https://url`, `tcp:host:port` or `ping:host`.
+State file: {target: {"ok": bool, "ms": int|None, "info": str}, "_via": iface, "_at": epoch}"""
+import json, re, socket, subprocess, time, urllib.request, urllib.error, sys
+from importlib.machinery import SourceFileLoader
+tg = SourceFileLoader('uznotify', '/usr/local/bin/uz-notify').load_module()
+STATE = '/var/lib/uz/probe.json'
+VIA = {'wwan0': '4G', 'wlan0': 'Wi-Fi', 'usb0': 'USB'}
+
+def uplink():
+    out = subprocess.run(['ip', '-4', 'route', 'show', 'default'], capture_output=True, text=True).stdout.splitlines()
+    best = sorted(out, key=lambda l: int((re.search(r'metric (\d+)', l) or [0, 0])[1]))
+    m = re.search(r'dev (\S+)', best[0]) if best else None
+    return m[1] if m else ''
+
+def check(t):
+    t0 = time.monotonic(); ms = lambda: round((time.monotonic() - t0) * 1000)
+    try:
+        if t.startswith('tcp:'):
+            _, h, p = t.split(':'); socket.create_connection((h, int(p)), timeout=10).close(); return True, ms(), ''
+        if t.startswith('ping:'):
+            r = subprocess.run(['ping', '-c3', '-W5', '-q', t[5:]], capture_output=True, text=True)
+            m = re.search(r'= [\d.]+/([\d.]+)/', r.stdout)
+            return r.returncode == 0, (round(float(m[1])) if m else None), ''
+        r = urllib.request.urlopen(urllib.request.Request(t, headers={'User-Agent': 'uz-probe'}), timeout=20)
+        return r.status < 500, ms(), str(r.status)
+    except urllib.error.HTTPError as e: return e.code < 500, ms(), str(e.code)
+    except Exception as e: return False, None, type(e).__name__
+
+try: targets = [l.strip() for l in open('/etc/uz/probe.list') if l.strip() and not l.startswith('#')]
+except OSError: sys.exit(0)
+try: old = json.load(open(STATE))
+except Exception: old = {}
+dev = uplink(); via = VIA.get(dev, dev or 'offline')
+new = {'_via': dev, '_at': int(time.time())}
+for t in targets:
+    ok, ms, info = check(t)
+    if not ok:  # confirm before alerting
+        time.sleep(5); ok, ms, info = check(t)
+    new[t] = {'ok': ok, 'ms': ms, 'info': info}
+    prev = old.get(t)
+    prev_ok = prev.get('ok') if isinstance(prev, dict) else prev
+    if prev is not None and prev_ok != ok:
+        tg.send(('✅ UP ' if ok else '🔴 DOWN ') + t + (f' ({info})' if info else '') + f' [via {via}]')
+json.dump(new, open(STATE, 'w'))

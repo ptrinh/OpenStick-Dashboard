@@ -1,0 +1,11 @@
+[Unit]
+Description=UZ801 GNSS (modem GPS via ModemManager)
+After=ModemManager.service
+ConditionPathExists=/usr/bin/mmcli
+[Service]
+ExecStart=/usr/local/bin/uz-gps
+Restart=always
+RestartSec=30
+MemoryMax=30M
+[Install]
+WantedBy=multi-user.target

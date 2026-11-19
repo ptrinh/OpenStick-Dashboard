@@ -1,0 +1,4 @@
+#!/bin/sh
+# udhcpc probe script: only report the offer, never configure anything.
+[ "$1" = bound ] && echo "OFFER ${serverid:-$siaddr} $ip $router"
+exit 0

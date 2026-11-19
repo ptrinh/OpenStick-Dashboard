@@ -1,0 +1,65 @@
+#!/bin/sh
+# uz-mode home|travel|status — switch the stick's role (persisted in /etc/uz/uz.conf).
+#  home   : USB host gets 4G via NAT (failover WAN), Tailscale exit node + SSH, Wi-Fi off.
+#  travel : Wi-Fi hotspot UZ801-xxxx (password /etc/uz/hotspot.psk) NAT to 4G;
+#           if /etc/uz/sing-box.json exists, all traffic goes through sing-box (VPN).
+. /etc/uz/uz.conf
+M=${1:-$UZ_MODE}; IF=${UZ_WWAN:-wwan0}
+USBNET=${UZ_USBNET:-auto}; [ "$USBNET" = auto ] && USBNET=$(ip -4 route show dev usb0 proto kernel scope link | awk '{print $1; exit}')
+USBNET=${USBNET:-172.16.42.0/24}
+UDHCPC=$(command -v udhcpc || echo "busybox udhcpc")
+nat(){
+  nft -f - <<NFT
+table inet uz; delete table inet uz
+table inet uz {
+  chain postrouting {
+    type nat hook postrouting priority 100;
+    oifname { "$IF", "tun-uz" } masquerade
+    oifname "usb0" ip saddr != $USBNET masquerade
+  }
+  chain forward {
+    type filter hook forward priority 0; policy accept;
+  }
+}
+NFT
+}
+case $M in
+  home)
+    nmcli con down uz-hotspot >/dev/null 2>&1
+    interface=usb0 /usr/local/bin/uz-usb-dhcp deconfig
+    systemctl stop sing-box-uz 2>/dev/null
+    nat
+    [ "${UZ_EXIT_NODE:-1}" = 1 ] && EX=true || EX=false
+    tailscale set --advertise-exit-node=$EX --ssh >/dev/null 2>&1
+    ;;
+  travel)
+    # The single Wi-Fi radio becomes the hotspot, so Wi-Fi client uplink is lost:
+    # refuse unless 4G is up (or --force), and auto-revert to home if offline after 3 min.
+    if ! ip route show default dev $IF 2>/dev/null | grep -q .; then
+      # no 4G: try the USB host as uplink (macOS Internet Sharing hands out 192.168.2.x by DHCP)
+      $UDHCPC -i usb0 -n -q -t 4 -T 2 -s /usr/local/bin/uz-usb-dhcp >/dev/null 2>&1
+      if [ -s /run/uz-usb-uplink ] && ping -c2 -W3 -I usb0 1.1.1.1 >/dev/null 2>&1; then
+        echo "uplink: USB (computer Internet Sharing)"
+      elif [ "$2" != "--force" ]; then
+        /usr/local/bin/uz-usb-dhcp deconfig
+        echo "Refused: no 4G and the USB computer is not sharing Internet — Travel would drop Wi-Fi and remote access."; exit 2
+      fi
+    fi
+    nat
+    SSID="UZ801-$(cat /etc/machine-id | cut -c1-4)"
+    nmcli con show uz-hotspot >/dev/null 2>&1 || \
+      nmcli con add type wifi ifname wlan0 con-name uz-hotspot autoconnect no ssid "$SSID" \
+        802-11-wireless.mode ap 802-11-wireless.band bg ipv4.method shared ipv6.method ignore \
+        wifi-sec.key-mgmt wpa-psk wifi-sec.psk "$(cat /etc/uz/hotspot.psk)" >/dev/null
+    nmcli con up uz-hotspot
+    [ -f /etc/uz/sing-box.json ] && systemctl restart sing-box-uz
+    systemd-run --collect --quiet --unit=uz-mode-guard --on-active=180 sh -c \
+      'ping -c3 -W5 1.1.1.1 >/dev/null 2>&1 || { uz-mode home; nmcli con up "$(nmcli -t -f NAME,TYPE con show | grep 802-11-wireless | grep -v uz-hotspot | head -1 | cut -d: -f1)"; }'
+    ;;
+  status)
+    echo "mode: $UZ_MODE"; ip -4 -br addr; ip route | head -5
+    nmcli -t -f NAME,DEVICE con show --active; tailscale status 2>/dev/null | head -5; exit 0 ;;
+  *) echo "usage: uz-mode home|travel|status"; exit 1 ;;
+esac
+sed -i "s/^UZ_MODE=[a-z]*/UZ_MODE=$M/" /etc/uz/uz.conf
+echo "mode=$M"

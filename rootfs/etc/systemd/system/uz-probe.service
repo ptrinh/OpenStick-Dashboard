@@ -1,0 +1,5 @@
+[Unit]
+Description=UZ801 service probe over 4G
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/uz-probe

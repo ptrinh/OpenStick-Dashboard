@@ -1,0 +1,11 @@
+# never commit device secrets or downloads
+*.psk
+*.pin
+telegram.env
+passkeys.json
+known_hosts
+pkgs/
+*.img
+*.bin
+__pycache__/
+.DS_Store

@@ -1,0 +1,9 @@
+[Unit]
+Description=UZ801 SMS <-> Telegram gateway
+After=uz-lte.service
+[Service]
+ExecStart=/usr/local/bin/uz-sms
+Restart=always
+RestartSec=30
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,15 @@
+#!/usr/bin/env python3
+"""uz-passkey list | reset   — manage dashboard passkeys (recovery: reset removes all and reopens the dashboard)."""
+import sys, subprocess, time
+sys.path.insert(0, '/usr/local/lib/uz')
+import webauthn as wa
+cmd = sys.argv[1] if len(sys.argv) > 1 else 'list'
+if cmd == 'list':
+    for c in wa.public_list():
+        lu = time.strftime('%Y-%m-%d %H:%M', time.localtime(c['last_used'])) if c['last_used'] else 'never'
+        print(f"{c['name']:<24} {c['rp']:<40} created {time.strftime('%Y-%m-%d', time.localtime(c['created']))}  last used {lu}")
+    print(f"{len(wa.load())} passkey(s); dashboard login {'REQUIRED' if wa.enabled() else 'not required'}")
+elif cmd == 'reset':
+    wa.reset(); subprocess.run(['systemctl', 'restart', 'uz-web']); print('all passkeys removed; dashboard no longer requires passkey login')
+else:
+    print(__doc__); sys.exit(1)

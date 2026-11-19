@@ -1,0 +1,51 @@
+#!/bin/sh
+# uz-led daemon | set <red|green|blue> <mode> | locate | status
+# modes: auto on off blink slow heartbeat
+#  auto: red   = steady (power); fast blink when there is no internet at all
+#        green = Wi-Fi (client or hotspot): on with link, flickers on traffic
+#        blue  = 4G: on with link, flickers on traffic; slow blink while modem searches
+L=/sys/class/leds; CONF=/etc/uz/led.conf
+. /etc/uz/uz.conf 2>/dev/null; WAN=${UZ_WWAN:-wwan0}
+dev(){ case $1 in red) echo red:power ;; green) echo green:wlan ;; blue) echo blue:wan ;; esac; }
+get(){ v=$(grep "^$1=" $CONF 2>/dev/null | cut -d= -f2); echo ${v:-auto}; }
+cur=""
+apply(){  # $1 led, $2 mode (concrete), $3 netdev
+  d=$L/$(dev $1); key="$1:$2:$3"
+  case " $cur " in *" $key "*) return ;; esac
+  cur=$(echo "$cur" | tr ' ' '\n' | grep -v "^$1:" | tr '\n' ' ')" $key"
+  case $2 in
+    on)  echo none > $d/trigger; echo 1 > $d/brightness ;;
+    off) echo none > $d/trigger; echo 0 > $d/brightness ;;
+    blink) echo timer > $d/trigger; echo 150 > $d/delay_on; echo 150 > $d/delay_off ;;
+    slow)  echo timer > $d/trigger; echo 120 > $d/delay_on; echo 1880 > $d/delay_off ;;
+    heartbeat) echo heartbeat > $d/trigger ;;
+    net) echo netdev > $d/trigger; echo $3 > $d/device_name; echo 1 > $d/link; echo 1 > $d/tx; echo 1 > $d/rx ;;
+  esac
+}
+auto(){
+  online=0; ip route show default | grep -q . && ping -c1 -W3 1.1.1.1 >/dev/null 2>&1 && online=1
+  [ "$(get red)" = auto ] && { [ $online = 1 ] && apply red on || apply red blink; }
+  if [ "$(get green)" = auto ]; then
+    if [ "$(cat /sys/class/net/wlan0/operstate 2>/dev/null)" = up ]; then apply green net wlan0; else apply green off; fi
+  fi
+  if [ "$(get blue)" = auto ]; then
+    if ip -4 addr show $WAN 2>/dev/null | grep -q inet; then apply blue net $WAN
+    elif { [ -e /dev/wwan0qmi0 ] && pgrep -f uz-lte >/dev/null; } || \
+         { command -v mmcli >/dev/null && mmcli -L 2>/dev/null | grep -q Modem; }; then apply blue slow
+    else apply blue off; fi
+  fi
+  for c in red green blue; do m=$(get $c); [ $m != auto ] && apply $c $m; done
+}
+case ${1:-} in
+  daemon) modprobe -q ledtrig-timer; modprobe -q ledtrig-netdev; modprobe -q ledtrig-pattern
+          trap 'cur=""' HUP
+          while :; do auto; sleep 5 & wait $!; done ;;
+  set) case $2 in red|green|blue) ;; *) echo "led: red|green|blue"; exit 1 ;; esac
+       case $3 in auto|on|off|blink|slow|heartbeat) ;; *) echo "mode: auto|on|off|blink|slow|heartbeat"; exit 1 ;; esac
+       touch $CONF; grep -v "^$2=" $CONF > $CONF.t; echo "$2=$3" >> $CONF.t; mv $CONF.t $CONF
+       pkill -HUP -f "uz-led daemon"; echo "$2=$3" ;;
+  locate) for c in red:power green:wlan blue:wan; do echo timer > $L/$c/trigger; echo 80 > $L/$c/delay_on; echo 80 > $L/$c/delay_off; done
+          sleep ${2:-10}; pkill -HUP -f "uz-led daemon" ;;
+  status) for c in red green blue; do d=$L/$(dev $c); echo "$c mode=$(get $c) trigger=$(sed -E 's/.*\[([^]]+)\].*/\1/' $d/trigger) on=$(cat $d/brightness)"; done ;;
+  *) echo "usage: uz-led daemon | set <red|green|blue> <auto|on|off|blink|slow|heartbeat> | locate [sec] | status" ;;
+esac

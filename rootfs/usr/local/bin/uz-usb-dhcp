@@ -1,0 +1,13 @@
+#!/bin/sh
+# udhcpc script for usb0 uplink (macOS Internet Sharing). Adds the lease next to the
+# static 172.16.42.1 (never flushes it) and a default route with metric 200.
+case "$1" in
+  bound|renew)
+    ip addr add $ip/${mask:-24} dev $interface 2>/dev/null
+    for r in $router; do ip route replace default via $r dev $interface metric 200; break; done
+    command -v resolvectl >/dev/null && { resolvectl dns $interface ${dns:-1.1.1.1}; resolvectl domain $interface '~.'; }
+    echo "$ip $router" > /run/uz-usb-uplink ;;
+  deconfig|leasefail|nak)
+    [ -s /run/uz-usb-uplink ] && { set -- $(cat /run/uz-usb-uplink); ip route del default via $2 dev usb0 2>/dev/null; ip addr del $1 dev usb0 2>/dev/null; rm -f /run/uz-usb-uplink; } ;;
+esac
+exit 0

@@ -1,0 +1,535 @@
+#!/usr/bin/env python3
+"""UZ801 dashboard. Listens on 127.0.0.1:8080; exposed only through `tailscale serve`
+(HTTPS on the tailnet). Every request must carry Tailscale-User-Login equal to the
+stick owner's login (taken from `tailscale status --json`); POSTs must be same-origin.
+UZ_WEB_DEV=1 disables auth for local testing only."""
+import ipaddress, json, os, re, subprocess, sys, threading, time, uuid
+try:
+    sys.path.insert(0, '/usr/local/lib/uz'); import webauthn as wa   # passkeys (needs python3-cryptography)
+    import cryptography  # noqa: F401
+except Exception:
+    wa = None
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+DEV = os.environ.get('UZ_WEB_DEV') == '1'
+PORT = int(os.environ.get('UZ_WEB_PORT', '8080'))
+Q = 'qmicli -d /dev/wwan0qmi0 --device-open-proxy'
+cache, owner = {}, {'login': None, 't': 0}
+
+def sh(cmd, t=25):
+    try: return subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=t).stdout.strip()
+    except Exception as e: return ''
+
+def rd(p, d=''):
+    try: return open(p).read().strip()
+    except OSError: return d
+
+def conf():
+    c = {}
+    for l in rd('/etc/uz/uz.conf').splitlines():
+        m = re.match(r'(\w+)=(\S*)', l)
+        if m: c[m[1]] = m[2]
+    return c
+
+TS = {'t': 0, 'state': ''}
+def ts_info(force=False):
+    """Cached `tailscale status`: backend state, owner login, tailnet, DNS name, pending auth URL."""
+    if force or time.time() - TS['t'] > 5:
+        try:
+            st = json.loads(sh('tailscale status --json', 10) or '{}')
+            me = st.get('Self') or {}
+            user = (st.get('User') or {}).get(str(me.get('UserID')), {})
+            TS.update(state=st.get('BackendState', ''), auth_url=st.get('AuthURL', ''), login=user.get('LoginName', ''),
+                      dns=(me.get('DNSName') or '').rstrip('.'), tailnet=(st.get('CurrentTailnet') or {}).get('Name', ''), t=time.time())
+        except Exception: pass
+    return TS
+
+def paired():
+    # NeedsLogin / NoState = no account. Running, Starting and Stopped ("tailscale down") still belong to an owner.
+    return ts_info()['state'] not in ('NeedsLogin', 'NoState')
+
+def owner_login():
+    return ts_info()['login'] or None
+
+def exit_node():
+    """advertised: we offer 0.0.0.0/0; approved: the tailnet admin allowed it (AllowedIPs carries 0.0.0.0/0)."""
+    if time.time() - cache.get('ex_t', 0) > 15:
+        try:
+            prefs = json.loads(sh('tailscale debug prefs', 8) or '{}')
+            me = (json.loads(sh('tailscale status --json', 8) or '{}').get('Self') or {})
+            cache['ex'] = {'advertised': '0.0.0.0/0' in (prefs.get('AdvertiseRoutes') or []),
+                           'approved': '0.0.0.0/0' in (me.get('AllowedIPs') or [])}
+        except Exception: cache['ex'] = {'advertised': False, 'approved': False}
+        cache['ex_t'] = time.time()
+    return cache['ex']
+
+def local_urls():
+    out = []
+    for dev in ('wlan0', 'usb0'):
+        for ip in sh(f"ip -4 -o addr show {dev} 2>/dev/null | awk '{{print $4}}' | cut -d/ -f1", 5).split():
+            out.append(f'http://{ip}:{PORT}')
+    return out
+
+MM = subprocess.run('command -v mmcli >/dev/null && systemctl is-enabled -q ModemManager', shell=True).returncode == 0
+
+def mm_radio():
+    def kv(*a):
+        d = {}
+        for l in sh('mmcli ' + ' '.join(a) + ' -K', 20).splitlines():
+            if ':' in l: k, v = l.split(':', 1); d[k.strip()] = v.strip()
+        return d
+    m = kv('-m any')
+    if not m: return {'reg': 'no modem'}
+    if not cache.get('mm_sig'): sh('mmcli -m any --signal-setup=30', 10); cache['mm_sig'] = 1
+    sg = kv('-m any --signal-get')
+    num = lambda v: '' if v in ('', '--') else v.split()[0]
+    return {'rssi': num(sg.get('modem.signal.lte.rssi', '')), 'rsrp': num(sg.get('modem.signal.lte.rsrp', '')),
+            'snr': num(sg.get('modem.signal.lte.snr', '')), 'net': m.get('modem.generic.access-technologies.value[1]', m.get('modem.generic.access-technologies', '')),
+            'reg': m.get('modem.3gpp.registration-state', m.get('modem.generic.state', '')) if m.get('modem.generic.sim', '--') != '--' else 'no SIM',
+            'operator': m.get('modem.3gpp.operator-name', ''), 'plmn': m.get('modem.3gpp.operator-code', '')}
+
+def nm_get(*a):
+    try: return subprocess.run(['nmcli', '-g', *a], capture_output=True, text=True, timeout=10).stdout.strip()
+    except Exception: return ''
+
+def net_loop():
+    """Public IP + latency + Wi-Fi SSID + USB Internet-sharing probe, refreshed every 30 s."""
+    last_dhcp = 0
+    while True:
+        n = dict(cache.get('net') or {})
+        trace = sh('curl -s -m 8 https://1.1.1.1/cdn-cgi/trace', 12)
+        t = dict(l.split('=', 1) for l in trace.splitlines() if '=' in l)
+        n.update({'public_ip': t.get('ip', ''), 'country': t.get('loc', ''), 'colo': t.get('colo', '')})
+        p = re.search(r'= [\d.]+/([\d.]+)/', sh('ping -c3 -W2 -q 1.1.1.1', 12))
+        n['latency_ms'] = round(float(p[1])) if p else None
+        conn = nm_get('GENERAL.CONNECTION', 'device', 'show', 'wlan0')
+        n['ssid'], n['wifi_mode'] = '', ''
+        if conn and conn != '--':
+            n['ssid'] = nm_get('802-11-wireless.ssid', 'connection', 'show', conn)
+            n['wifi_mode'] = nm_get('802-11-wireless.mode', 'connection', 'show', conn) or 'infrastructure'
+        n['wifi_signal'] = next((l.split(':', 1)[1] for l in sh('nmcli -t -f IN-USE,SIGNAL dev wifi list --rescan no', 8).splitlines() if l.startswith('*:')), '')
+        # USB: is a computer attached, and is it sharing Internet (macOS Internet Sharing / any DHCP server)?
+        usb = {'link': rd('/sys/class/net/usb0/carrier') == '1', 'host': bool(sh('ip neigh show dev usb0 | grep -vE "FAILED|INCOMPLETE"', 5))}
+        if os.path.exists('/run/uz-usb-uplink'): usb['sharing'] = 'in-use'
+        elif usb['link'] and time.time() - last_dhcp > 120:
+            last_dhcp = time.time(); own = sh("ip -4 -o addr show usb0 | awk '{print $4}' | cut -d/ -f1", 5)
+            off = sh(f"{'udhcpc' if os.path.exists('/sbin/udhcpc') or os.path.exists('/usr/sbin/udhcpc') else 'busybox udhcpc'} -i usb0 -n -q -t 2 -T 1 -A 0 -s /usr/local/bin/uz-usb-probe 2>/dev/null", 10)
+            m = re.search(r'OFFER (\S+)', off)
+            usb['sharing'] = 'available' if m and m[1] not in own.split() else 'none'
+        else: usb['sharing'] = (cache.get('net') or {}).get('usb', {}).get('sharing', 'none') if usb['link'] else 'none'
+        n['usb'] = usb
+        cache['net'] = n
+        if ts_info(True).get('state') == 'Running' and ':8080' not in sh('tailscale serve status 2>&1', 8) and '127.0.0.1:8080' not in sh('tailscale serve status 2>&1', 8):
+            sh('tailscale serve --bg 8080', 15)
+        time.sleep(30)
+
+def slow_loop():
+    """qmicli/mmcli are slow and flaky: refresh radio info in the background."""
+    while True:
+        if MM:
+            cache['radio'] = mm_radio(); cache['tailscale'] = sh('tailscale status 2>/dev/null | head -8', 10)
+            time.sleep(30); continue
+        sig = sh(f'{Q} --nas-get-signal-strength')
+        srv = sh(f'{Q} --nas-get-serving-system')
+        g = lambda pat, s: (re.search(pat, s) or [None, ''])[1]
+        cache['radio'] = {
+            'rssi': g(r"RSSI:\s*Network '[^']+': '(-?\d+) dBm'", sig) or g(r"(-?\d+) dBm", sig),
+            'rsrp': g(r"RSRP:\s*Network '[^']+': '(-?\d+) dBm'", sig),
+            'snr': g(r"SNR:\s*Network '[^']+': '(-?[\d.]+) dB'", sig),
+            'net': g(r"Network '([^']+)'", sig),
+            'reg': g(r"Registration state: '([^']+)'", srv),
+            'operator': g(r"Description: '([^']*)'", srv),
+            'plmn': g(r"MCC: '(\d+)'", srv) + '-' + g(r"MNC: '(\d+)'", srv),
+        }
+        cache['tailscale'] = sh('tailscale status 2>/dev/null | head -8', 10)
+        time.sleep(30)
+
+def status():
+    c = conf(); wan = c.get('UZ_WWAN', 'wwan0')
+    mem = {l.split(':')[0]: int(l.split()[1]) for l in rd('/proc/meminfo').splitlines()[:5]}
+    try: probe = json.load(open('/var/lib/uz/probe.json'))
+    except Exception: probe = {}
+    sms = [json.loads(l) for l in rd('/var/lib/uz/sms.jsonl').splitlines()[-50:] if l.strip()][::-1]
+    temps = [int(rd(f'/sys/class/thermal/{z}/temp', '0')) / 1000 for z in sorted(os.listdir('/sys/class/thermal')) if z.startswith('thermal_zone')] if os.path.isdir('/sys/class/thermal') else []
+    return {
+        'host': sh('hostname'), 'mode': c.get('UZ_MODE', '?'),
+        'uptime': rd('/proc/uptime', '0').split()[0], 'load': rd('/proc/loadavg')[:14],
+        'mem_total_mb': mem.get('MemTotal', 0) // 1024, 'mem_avail_mb': mem.get('MemAvailable', 0) // 1024,
+        'temp_c': max(temps) if temps else None,
+        'wan_ip': sh(f"ip -4 -br addr show {wan} | awk '{{print $3}}'", 5),
+        'ts_ip': sh('tailscale ip -4 2>/dev/null', 5),
+        'rx_mb': round(int(rd(f'/sys/class/net/{wan}/statistics/rx_bytes', '0')) / 1e6, 1),
+        'tx_mb': round(int(rd(f'/sys/class/net/{wan}/statistics/tx_bytes', '0')) / 1e6, 1),
+        'disk': disk(), 'net': cache.get('net', {}),
+        'ts': {k: ts_info().get(k, '') for k in ('state', 'login', 'dns', 'tailnet', 'auth_url')},
+        'paired': paired(), 'local_urls': local_urls(), 'exit_node': exit_node(),
+        'gps': (lambda: json.load(open('/var/lib/uz/gps.json')) if os.path.exists('/var/lib/uz/gps.json') else None)(),
+        'uplink': sh("ip -4 route show default | sort -t' ' -k9 -n | awk '{for(i=1;i<=NF;i++) if($i==\"dev\") {print $(i+1); exit}}'", 5),
+        'leds': {l.split()[0]: dict(kv.split('=', 1) for kv in l.split()[1:]) for l in sh('uz-led status', 5).splitlines() if l.strip()},
+        'hid': os.path.exists('/dev/hidg0'),
+        'storage': {'attached': attached(), 'images': images(), 'free_mb': free_bytes() // 1048576,
+                    'total_free_mb': sum(store_free(d, k) for d, k in STORES) // 1048576},
+        'hotspot': sh('nmcli -t -f NAME con show --active | grep -x uz-hotspot', 5) != '',
+        'services': {s: sh(f'systemctl is-active {s}', 5) for s in (('ModemManager',) if MM else ('uz-lte',)) + ('uz-sms', 'tailscaled', 'sing-box-uz')},
+        'radio': cache.get('radio', {}), 'tailscale': cache.get('tailscale', ''),
+        'probe': probe, 'sms': sms,
+        'log': sh(f"journalctl {'-u ModemManager' if MM else '-u uz-lte'} -u uz-sms -n 25 --no-pager -o short-iso 2>/dev/null | cut -c12-", 8),
+    }
+
+def run_bg(cmd):
+    subprocess.Popen(['systemd-run', '--collect', '--quiet', 'sh', '-c', cmd] if not DEV else ['sh', '-c', cmd],
+                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+# --- USB mass storage images (two stores: old Android system partition + rootfs) ---
+STORES = [('/var/lib/uz/images', 16), ('/var/lib/uz/images-root', 300)]   # (dir, MB kept free)
+if not os.path.ismount(STORES[0][0]):   # no dedicated partition (e.g. OpenStick layout): one store on rootfs
+    STORES = [('/var/lib/uz/images', 300)]
+IMG = STORES[0][0]
+NAME_RE = re.compile(r'[A-Za-z0-9][A-Za-z0-9._-]{0,79}')
+
+def store_free(d, keep):
+    os.makedirs(d, exist_ok=True); st = os.statvfs(d)
+    return max(0, st.f_bavail * st.f_frsize - keep * 1048576)
+
+def free_bytes():
+    """largest single free space (an image must fit in one store)"""
+    return max(store_free(d, k) for d, k in STORES)
+
+RESERVE = 0
+
+def attached():
+    base = '/sys/kernel/config/usb_gadget/g1/functions/mass_storage.uz/lun.0/'
+    f = rd(base + 'file')
+    if not f: return None
+    mode = 'cdrom' if rd(base + 'cdrom') == '1' else 'ro' if rd(base + 'ro') == '1' else 'rw'
+    return {'name': os.path.basename(f), 'mode': mode}
+
+def disk():
+    out = []
+    for label, path in (('system', '/'), ('boot', '/boot'), ('images', IMG)):
+        if path == IMG and not os.path.ismount(IMG): continue
+        try:
+            st = os.statvfs(path); tot = st.f_blocks * st.f_frsize; free = st.f_bavail * st.f_frsize
+            out.append({'label': label, 'total_mb': tot // 1048576, 'free_mb': free // 1048576})
+        except OSError: pass
+    img = sum(i['mb'] for i in images()) * 1048576
+    emmc = int(rd('/sys/block/mmcblk0/size', '0')) * 512
+    return {'parts': out, 'images_mb': int(img // 1048576), 'emmc_mb': emmc // 1048576}
+
+def images():
+    out = []
+    for d, _ in STORES:
+        if os.path.isdir(d):
+            out += [{'name': f, 'mb': round(os.path.getsize(os.path.join(d, f)) / 1048576, 1)}
+                    for f in os.listdir(d) if not f.endswith('.part') and f != 'lost+found']
+    return sorted(out, key=lambda x: x['name'])
+
+def img_path(name, new=False, size=0):
+    """existing image path, or (new=True) a path in the store with the most room"""
+    name = str(name or '')
+    if not NAME_RE.fullmatch(name): return None
+    for d, _ in STORES:
+        if os.path.exists(os.path.join(d, name)): return None if new else os.path.join(d, name)
+    if not new: return None
+    d, k = max(STORES, key=lambda x: store_free(*x))
+    return os.path.join(d, name) if store_free(d, k) >= size else None
+
+# --- USB HID keyboard (boot protocol, US layout) ---
+MOD = {'ctrl': 1, 'shift': 2, 'alt': 4, 'gui': 8, 'cmd': 8, 'win': 8, 'meta': 8, 'option': 4}
+CH = {**{c: (4 + i, 0) for i, c in enumerate('abcdefghijklmnopqrstuvwxyz')},
+      **{c: (4 + i, 2) for i, c in enumerate('ABCDEFGHIJKLMNOPQRSTUVWXYZ')},
+      **{c: (30 + i, 0) for i, c in enumerate('1234567890')}, **{c: (30 + i, 2) for i, c in enumerate('!@#$%^&*()')},
+      '\n': (40, 0), ' ': (44, 0), '\t': (43, 0), '-': (45, 0), '_': (45, 2), '=': (46, 0), '+': (46, 2),
+      '[': (47, 0), '{': (47, 2), ']': (48, 0), '}': (48, 2), '\\': (49, 0), '|': (49, 2), ';': (51, 0), ':': (51, 2),
+      "'": (52, 0), '"': (52, 2), '`': (53, 0), '~': (53, 2), ',': (54, 0), '<': (54, 2), '.': (55, 0), '>': (55, 2),
+      '/': (56, 0), '?': (56, 2)}
+NAMED = {'enter': 40, 'escape': 41, 'esc': 41, 'backspace': 42, 'tab': 43, 'space': 44, 'delete': 76, 'home': 74,
+         'end': 77, 'pageup': 75, 'pagedown': 78, 'arrowright': 79, 'arrowleft': 80, 'arrowdown': 81, 'arrowup': 82,
+         'right': 79, 'left': 80, 'down': 81, 'up': 82, 'capslock': 57,
+         **{f'f{i}': 57 + i for i in range(1, 13)}}
+
+def hid_write(reports):
+    if not os.path.exists('/dev/hidg0'): return 'USB keyboard is off — turn it on first'
+    with open('/dev/hidg0', 'wb', buffering=0) as h:
+        for mod, key in reports:
+            h.write(bytes([mod, 0, key, 0, 0, 0, 0, 0])); h.write(bytes(8)); time.sleep(0.008)
+    return None
+
+def hid_key(name, mods):
+    """name: a single character or a NAMED key; mods: list of modifier names."""
+    m = 0
+    for x in mods: m |= MOD.get(x.lower(), 0)
+    if len(name) == 1:
+        if name.lower() in CH and m & ~2:   # with ctrl/alt/gui use the base key
+            k, s = CH[name.lower()]
+        elif name in CH: k, s = CH[name]
+        else: return None
+        return (m | s, k)
+    k = NAMED.get(name.lower())
+    return (m, k) if k else None
+
+def action(a, body):
+    if a == 'hid-text':
+        t = str(body.get('text', ''))[:2000]
+        rep = [hid_key(c, []) for c in t]
+        skipped = sum(r is None for r in rep)
+        err = hid_write([r for r in rep if r])
+        return {'error': err} if err else {'out': f'typed {len(t) - skipped} characters' + (f' (skipped {skipped} not on a US keyboard)' if skipped else '')}
+    if a == 'hid-key':
+        c = str(body.get('combo', ''))
+        if c.endswith('+') and (c == '+' or c.endswith('++')): key, rest = '+', c[:-1].rstrip('+')
+        elif '+' in c: rest, key = c.rsplit('+', 1)
+        else: rest, key = '', c
+        r = hid_key(key, [x for x in rest.split('+') if x])
+        if not r: return {'error': 'unsupported key'}
+        err = hid_write([r]); return {'error': err} if err else {'out': 'ok'}
+    if a == 'passwd':
+        pw = str(body.get('pw', ''))
+        if len(pw) < 10 or any(c in pw for c in ':\n\r'): return {'error': 'password: at least 10 characters, no colon'}
+        r = subprocess.run(['chpasswd'], input=f'user:{pw}\n', text=True, capture_output=True)
+        return {'out': 'SSH password changed'} if r.returncode == 0 else {'error': 'chpasswd failed'}
+    if a == 'mode' and body.get('mode') in ('home', 'travel'):
+        return {'out': sh(f"uz-mode {body['mode']}", 60)}
+    if a == 'lte-restart':
+        run_bg('nmcli con down lte; mmcli -m any --simple-disconnect; sleep 2; nmcli con up lte' if MM else 'systemctl restart uz-lte')
+        return {'out': 'restarting LTE'}
+    if a == 'probe': return {'out': sh('systemctl start uz-probe.service', 120) or 'probe done'}
+    if a == 'reboot': run_bg('sleep 2; systemctl reboot'); return {'out': 'rebooting'}
+    if a == 'img-attach':
+        p = img_path(body.get('name')); mode = body.get('mode', 'rw')
+        if not p or not os.path.isfile(p) or mode not in ('rw', 'ro', 'cdrom'): return {'error': 'invalid image or mode'}
+        run_bg(f"uz-gadget storage '{p}' {mode}"); return {'out': f"attached {os.path.basename(p)} ({mode}) — USB reconnects in ~2 s"}
+    if a == 'led':
+        if body.get('name') not in ('red', 'green', 'blue') or body.get('mode') not in ('auto', 'on', 'off', 'blink', 'slow', 'heartbeat'):
+            return {'error': 'invalid value'}
+        return {'out': sh(f"uz-led set {body['name']} {body['mode']}", 10)}
+    if a == 'led-locate': run_bg('uz-led locate 10'); return {'out': 'all LEDs blinking for 10 s'}
+    if a == 'img-eject': run_bg('uz-gadget eject'); return {'out': 'drive ejected'}
+    if a == 'img-delete':
+        p = img_path(body.get('name'))
+        if not p or not os.path.isfile(p): return {'error': 'no such image'}
+        if (attached() or {}).get('name') == os.path.basename(p): return {'error': 'attached — eject it first'}
+        os.remove(p); return {'out': 'deleted'}
+    if a == 'img-create':
+        try: mb = int(body.get('mb', 0))
+        except Exception: mb = 0
+        if not NAME_RE.fullmatch(str(body.get('name') or '')) or img_path(body.get('name')): return {'error': 'invalid name or already exists'}
+        p = img_path(body.get('name'), new=True, size=mb * 1048576)
+        if mb < 8 or not p: return {'error': f'size must be 8–{free_bytes() // 1048576} MB'}
+        with open(p, 'wb') as f: f.truncate(mb * 1048576)
+        r = subprocess.run(['mkfs.vfat', '-n', 'UZ801', p], capture_output=True)
+        if r.returncode: os.remove(p); return {'error': 'mkfs.vfat failed'}
+        return {'out': f'created {mb} MB FAT drive'}
+    if a == 'gadget' and body.get('fn') in ('hid', 'hid-off', 'reset'): run_bg(f"uz-gadget {body['fn']}"); return {'out': f"gadget {body['fn']}"}
+    if a == 'exit-node':
+        on = bool(body.get('on'))
+        r = subprocess.run(['tailscale', 'set', f'--advertise-exit-node={"true" if on else "false"}'], capture_output=True, text=True, timeout=20)
+        if r.returncode: return {'error': (r.stderr or 'tailscale set failed').strip()[:200]}
+        sh(f"sed -i 's/^UZ_EXIT_NODE=[01]/UZ_EXIT_NODE={1 if on else 0}/' /etc/uz/uz.conf; grep -q '^UZ_EXIT_NODE=' /etc/uz/uz.conf || echo 'UZ_EXIT_NODE={1 if on else 0}' >> /etc/uz/uz.conf", 5)
+        cache['ex_t'] = 0
+        return {'out': 'exit node on' if on else 'exit node off'}
+    if a == 'ts-pair':
+        # drop the current account; the dashboard then answers on local IPs until a new account signs in
+        urls = local_urls()
+        run_bg('sleep 2; tailscale logout; sleep 2; tailscale up --ssh --advertise-exit-node=$(. /etc/uz/uz.conf; [ "${UZ_EXIT_NODE:-1}" = 1 ] && echo true || echo false) --timeout=0')
+        TS['t'] = 0
+        return {'out': 'unpairing — continue on a local address', 'urls': urls}
+    if a == 'ts-login':
+        if paired(): return {'error': 'already paired'}
+        if not ts_info(True).get('auth_url'):
+            run_bg('tailscale up --ssh --advertise-exit-node=$(. /etc/uz/uz.conf; [ "${UZ_EXIT_NODE:-1}" = 1 ] && echo true || echo false) --timeout=0')
+            for _ in range(20):
+                time.sleep(1)
+                if ts_info(True).get('auth_url'): break
+        return {'out': ts_info().get('auth_url', '') or 'no sign-in link yet — retry in a few seconds', 'url': ts_info().get('auth_url', '')}
+    if a == 'qr':
+        txt = str(body.get('text', ''))[:400]
+        if not txt.startswith('https://login.tailscale.com/'): return {'error': 'unsupported QR payload'}
+        try:
+            svg = subprocess.run(['qrencode', '-t', 'SVG', '-m', '2', '-s', '6', '-o', '-', txt], capture_output=True, text=True, timeout=10).stdout
+            return {'qr': svg[svg.find('<svg'):] if '<svg' in svg else ''}
+        except Exception: return {'qr': ''}
+    if a == 'hotspot-psk':
+        psk = rd('/etc/uz/hotspot.psk'); ssid = nm_get('802-11-wireless.ssid', 'connection', 'show', 'uz-hotspot') or 'UZ801'
+        q = lambda x: re.sub(r'([\\;,:"])', r'\\\1', x)          # escape for the WIFI: QR payload
+        svg = ''
+        try:
+            svg = subprocess.run(['qrencode', '-t', 'SVG', '-m', '2', '-s', '6', '--foreground=000000', '--background=FFFFFF', '-o', '-',
+                                  f'WIFI:T:WPA;S:{q(ssid)};P:{q(psk)};;'], capture_output=True, text=True, timeout=10).stdout
+            svg = svg[svg.find('<svg'):] if '<svg' in svg else ''
+        except Exception: pass
+        return {'out': psk, 'ssid': ssid, 'qr': svg}
+    if a == 'hotspot-set':
+        psk = str(body.get('psk', ''))
+        if not (8 <= len(psk) <= 63) or not all(32 <= ord(c) < 127 for c in psk): return {'error': 'Wi-Fi password: 8–63 printable ASCII characters'}
+        fd = os.open('/etc/uz/hotspot.psk.tmp', os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, 'w') as f: f.write(psk)
+        os.replace('/etc/uz/hotspot.psk.tmp', '/etc/uz/hotspot.psk')
+        if nm_get('connection.id', 'connection', 'show', 'uz-hotspot'):
+            subprocess.run(['nmcli', 'connection', 'modify', 'uz-hotspot', 'wifi-sec.psk', psk], capture_output=True, timeout=15)
+            if 'uz-hotspot' in sh('nmcli -t -f NAME con show --active', 5).splitlines():
+                run_bg('nmcli connection up uz-hotspot')
+        return {'out': 'Wi-Fi password updated'}
+    if a == 'sms-pin-set':
+        pin = str(body.get('pin', ''))
+        if not re.fullmatch(r'\d{4,8}', pin): return {'error': 'PIN: 4–8 digits'}
+        fd = os.open('/etc/uz/sms.pin.tmp', os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, 'w') as f: f.write(pin)
+        os.replace('/etc/uz/sms.pin.tmp', '/etc/uz/sms.pin')
+        return {'out': 'SMS PIN updated'}
+    if a == 'sms-pin': return {'out': 'PIN: ' + (rd('/etc/uz/sms.pin') or 'not set')}
+    if a == 'sms':
+        to, text = str(body.get('to', '')).strip(), str(body.get('text', '')).strip()
+        if not re.fullmatch(r'\+?\d{3,15}', to) or not text or len(text) > 600: return {'error': 'invalid number or text'}
+        os.makedirs('/var/lib/uz/outbox', exist_ok=True)
+        i = uuid.uuid4().hex; p = f'/var/lib/uz/outbox/{i}'
+        json.dump({'to': to, 'text': text}, open(p + '.json.tmp', 'w')); os.replace(p + '.json.tmp', p + '.json')
+        for _ in range(90):
+            if os.path.exists(p + '.done'):
+                ok = json.load(open(p + '.done')).get('ok'); os.remove(p + '.done')
+                return {'out': 'sent' if ok else 'send failed'}
+            time.sleep(1)
+        return {'error': 'timeout — is uz-sms running?'}
+    return {'error': 'unknown action'}
+
+class H(BaseHTTPRequestHandler):
+    server_version = 'uz-web'
+    def log_message(self, *a): pass
+    def deny(self, code, msg):
+        self.send_response(code); self.send_header('Content-Type', 'text/plain'); self.end_headers(); self.wfile.write(msg.encode())
+
+    def access(self):
+        """'ts' = owner via `tailscale serve`; 'local' = LAN address while unpaired; None = refuse."""
+        if DEV: return 'ts'
+        peer = self.client_address[0]
+        login = self.headers.get('Tailscale-User-Login')
+        if peer in ('127.0.0.1', '::1') and login:
+            return 'ts' if login == owner_login() else None
+        try: ip = ipaddress.ip_address(peer)
+        except ValueError: return None
+        if ip.is_loopback or ip in ipaddress.ip_network('100.64.0.0/10') or not (ip.is_private or ip.is_link_local):
+            return None
+        try: ipaddress.ip_address(self.host())                  # Host must be an IP literal (blocks DNS rebinding)
+        except ValueError: return None
+        return None if paired() else 'local'
+
+    def host(self): return (self.headers.get('Host') or '').rsplit(':', 1)[0].strip('[]').lower()
+    def cookie(self):
+        for part in (self.headers.get('Cookie') or '').split(';'):
+            k, _, v = part.strip().partition('=')
+            if k == 'uz_s': return v
+        return ''
+    def pk_on(self): return bool(wa and wa.enabled())
+    def unlocked(self, mode):
+        if not self.pk_on(): return True
+        return mode == 'ts' and wa.session_ok(self.cookie())    # passkeys need HTTPS + a domain: only via Tailscale
+
+    def send(self, code, body, ctype='application/json', cookie=None):
+        b = body if isinstance(body, bytes) else json.dumps(body).encode()
+        self.send_response(code)
+        self.send_header('Content-Type', ctype); self.send_header('Cache-Control', 'no-store')
+        self.send_header('X-Frame-Options', 'DENY'); self.send_header('X-Content-Type-Options', 'nosniff')
+        self.send_header('Referrer-Policy', 'no-referrer')
+        self.send_header('Content-Security-Policy', "default-src 'self'; script-src 'unsafe-inline'; style-src 'unsafe-inline'")
+        if cookie is not None:
+            age = wa.SESSION_TTL if cookie else 0
+            self.send_header('Set-Cookie', f'uz_s={cookie}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age={age}')
+        self.end_headers(); self.wfile.write(b)
+
+    def locked_status(self, mode):
+        t = ts_info()
+        return {'locked': 'passkey' if mode == 'ts' else 'tailscale', 'host': self.host(), 'paired': paired(),
+                'ts': {'state': t.get('state', ''), 'auth_url': t.get('auth_url', '') if mode == 'local' else ''}}
+
+    def do_GET(self):
+        mode = self.access()
+        if not mode:
+            return self.deny(403, 'Forbidden. This stick is paired with Tailscale — open it through your tailnet.' if paired() else 'forbidden')
+        if self.path == '/':
+            page = rd('/usr/local/share/uz/index.html') or PAGE
+            return self.send(200, page.encode(), 'text/html; charset=utf-8')
+        if self.path == '/api/status':
+            if not self.unlocked(mode): return self.send(401, self.locked_status(mode))
+            st = status(); st['passkeys'] = {'available': bool(wa), 'count': len(wa.load()) if wa else 0, 'https': mode == 'ts'}
+            return self.send(200, st)
+        self.deny(404, 'not found')
+
+    def guard(self):
+        mode = self.access()
+        if not mode: self.deny(403, 'forbidden'); return None
+        if self.headers.get('Sec-Fetch-Site', 'same-origin') != 'same-origin' or self.headers.get('X-UZ') != '1':
+            self.deny(403, 'cross-site request blocked'); return None
+        return mode
+
+    def do_PUT(self):
+        mode = self.guard()
+        if not mode: return
+        if not self.unlocked(mode): return self.send(401, {'error': 'locked'})
+        m = re.fullmatch(r'/api/upload\?name=([^&]+)', self.path)
+        from urllib.parse import unquote
+        n = int(self.headers.get('Content-Length') or -1)
+        name = unquote(m[1]) if m else ''
+        if not NAME_RE.fullmatch(name): return self.send(400, {'error': 'file name: letters, digits, . _ - only'})
+        if img_path(name): return self.send(409, {'error': 'a file with that name exists'})
+        p = img_path(name, new=True, size=max(n, 0))
+        if n <= 0 or not p: return self.send(413, {'error': f'not enough space (max {free_bytes() // 1048576} MB per file)'})
+        tmp, left = p + '.part', n
+        try:
+            with open(tmp, 'wb') as f:
+                while left > 0:
+                    b = self.rfile.read(min(left, 1 << 20))
+                    if not b: raise IOError('connection closed')
+                    f.write(b); left -= len(b)
+            os.replace(tmp, p)
+        except Exception:
+            try: os.remove(tmp)
+            except OSError: pass
+            return self.send(500, {'error': 'upload interrupted'})
+        self.send(200, {'out': f'uploaded {os.path.basename(p)} ({n // 1048576} MB)'})
+
+    def do_POST(self):
+        mode = self.guard()
+        if not mode: return
+        m = re.fullmatch(r'/api/([a-z-]+)', self.path)
+        if not m: return self.deny(404, 'not found')
+        name = m[1]
+        n = int(self.headers.get('Content-Length') or 0)
+        try: body = json.loads(self.rfile.read(min(n, 32768)) or b'{}')
+        except Exception: body = {}
+        rp = self.host()
+        try:
+            if not self.unlocked(mode):
+                if mode == 'ts' and name == 'pk-login-begin': return self.send(200, wa.login_begin(rp))
+                if mode == 'ts' and name == 'pk-login-finish':
+                    tok = wa.login_finish(rp, body); return self.send(200, {'out': 'signed in'}, cookie=tok)
+                if mode == 'local' and name in ('ts-login', 'qr'): return self.send(200, action(name, body))
+                return self.send(401, {'error': 'locked — sign in with a passkey'})
+            if name.startswith('pk-'):
+                if not wa: return self.send(200, {'error': 'passkeys unavailable (python3-cryptography missing)'})
+                if name == 'pk-list': return self.send(200, {'list': wa.public_list()})
+                if name == 'pk-logout':
+                    wa.end_session(self.cookie()); return self.send(200, {'out': 'signed out'}, cookie='')
+                if name == 'pk-delete':
+                    left = wa.delete(str(body.get('id', '')))
+                    return self.send(200, {'out': 'passkey removed' + ('' if left else ' — dashboard login no longer required')})
+                if mode != 'ts': return self.send(200, {'error': 'passkeys need the HTTPS Tailscale address'})
+                if name == 'pk-reg-begin': return self.send(200, wa.register_begin(rp, owner_login() or 'owner'))
+                if name == 'pk-reg-finish':
+                    wa.register_finish(rp, body)
+                    tok = None if wa.session_ok(self.cookie()) else wa.new_session()   # first passkey: stay signed in
+                    return self.send(200, {'out': 'passkey created'}, cookie=tok)
+                return self.send(200, {'error': 'unknown action'})
+            if name == 'ts-pair' and wa: wa.reset()   # passkeys are bound to this tailnet's hostname
+            self.send(200, action(name, body))
+        except (ValueError, KeyError, TypeError) as e:
+            self.send(200, {'error': str(e) or type(e).__name__})
+        except Exception as e:
+            self.send(200, {'error': 'verification failed' if 'Signature' in type(e).__name__ else type(e).__name__})
+
+PAGE = '<!doctype html><title>UZ801</title><p>UI file /usr/local/share/uz/index.html is missing.</p>'
+
+if __name__ == '__main__':
+    if not DEV:
+        threading.Thread(target=slow_loop, daemon=True).start()
+        threading.Thread(target=net_loop, daemon=True).start()
+    ThreadingHTTPServer(('0.0.0.0', PORT), H).serve_forever()

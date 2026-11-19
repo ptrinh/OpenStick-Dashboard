@@ -1,0 +1,9 @@
+[Unit]
+Description=UZ801 LTE data (qmicli)
+After=network.target
+[Service]
+ExecStart=/usr/local/bin/uz-lte
+Restart=always
+RestartSec=10
+[Install]
+WantedBy=multi-user.target

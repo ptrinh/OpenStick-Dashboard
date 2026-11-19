@@ -1,0 +1,11 @@
+[Unit]
+Description=Apply UZ801 role (home/travel)
+After=NetworkManager.service tailscaled.service uz-lte.service
+Wants=NetworkManager.service
+[Service]
+Type=oneshot
+ExecStartPre=/bin/sleep 20
+ExecStart=/usr/local/bin/uz-mode
+RemainAfterExit=yes
+[Install]
+WantedBy=multi-user.target

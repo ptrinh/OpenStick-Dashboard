@@ -1,0 +1,11 @@
+[Unit]
+Description=UZ801 zram swap
+DefaultDependencies=no
+Before=swap.target
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/uz-zram
+ExecStop=/sbin/swapoff /dev/zram0
+RemainAfterExit=yes
+[Install]
+WantedBy=swap.target

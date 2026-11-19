@@ -1,0 +1,48 @@
+#!/bin/sh
+# Keep LTE data up on UZ801 (pmOS) with qmicli; ModemManager does not work here.
+# Quirks per pmOS wiki: raw-ip via --device-open-net, follow-network keeps the session.
+. /etc/uz/uz.conf 2>/dev/null
+DEV=${UZ_QMI:-/dev/wwan0qmi0}; IF=${UZ_WWAN:-wwan0}; PROFILE=${UZ_PROFILE:-3}
+Q="qmicli -d $DEV --device-open-proxy"
+log(){ echo "uz-lte: $*"; }
+QPID=
+stop(){ [ -n "$QPID" ] && { kill -INT $QPID 2>/dev/null; sleep 3; kill -9 $QPID 2>/dev/null; }; QPID=; ip addr flush dev $IF 2>/dev/null; }
+trap 'stop; exit 0' INT TERM
+mask2len(){ echo "$1" | awk -F. '{n=0; for(i=1;i<=4;i++){x=$i; while(x>0){n+=x%2; x=int(x/2)}} print n}'; }
+last_state=
+while :; do
+  for i in $(seq 60); do [ -e $DEV ] && break; sleep 2; done
+  $Q --dms-set-operating-mode=online >/dev/null 2>&1
+  reg=
+  for i in $(seq 60); do
+    $Q --nas-get-serving-system 2>/dev/null | grep -q "Registration state: 'registered'" && { reg=1; break; }; sleep 3
+  done
+  [ -z "$reg" ] && { log "not registered, retrying"; sleep 20; continue; }
+  $Q --wds-reset >/dev/null 2>&1
+  ip link set $IF down 2>/dev/null
+  qmicli -d $DEV --device-open-proxy --device-open-net='net-raw-ip|net-no-qos-header' \
+     --wds-start-network=3gpp-profile=$PROFILE --wds-follow-network >/run/uz-lte.follow 2>&1 &
+  QPID=$!; sleep 6
+  S=$($Q --wds-get-current-settings 2>/dev/null)
+  IP=$(echo "$S" | awk -F': *' '/IPv4 address/{print $2; exit}')
+  MASK=$(echo "$S" | awk -F': *' '/IPv4 subnet mask/{print $2; exit}')
+  GW=$(echo "$S" | awk -F': *' '/IPv4 gateway address/{print $2; exit}')
+  DNS=$(echo "$S" | awk -F': *' '/IPv4 (primary|secondary) DNS/{printf "%s ", $2}')
+  MTU=$(echo "$S" | awk -F': *' '/MTU/{print $2; exit}')
+  if [ -z "$IP" ] || [ -z "$GW" ]; then log "no IP settings: $(tail -3 /run/uz-lte.follow | tr '\n' ' ')"; stop; sleep 15; continue; fi
+  ip link set $IF up; [ -n "$MTU" ] && ip link set $IF mtu $MTU
+  ip addr flush dev $IF; ip addr add $IP/$(mask2len $MASK) dev $IF
+  ip route replace default via $GW dev $IF metric 50
+  if command -v resolvectl >/dev/null; then resolvectl dns $IF $DNS; resolvectl domain $IF '~.'
+  elif [ ! -L /etc/resolv.conf ]; then printf 'nameserver %s\n' $DNS > /etc/resolv.conf; fi
+  log "up: $IP gw $GW dns $DNS"
+  [ "$last_state" != "up $IP" ] && uz-notify "📶 LTE up: $IP" >/dev/null 2>&1 &
+  last_state="up $IP"
+  fails=0
+  while kill -0 $QPID 2>/dev/null; do
+    sleep 30
+    if ping -c2 -W5 -I $IF ${UZ_PING:-1.1.1.1} >/dev/null 2>&1; then fails=0; else fails=$((fails+1)); fi
+    [ $fails -ge 4 ] && { log "link dead, reconnecting"; break; }
+  done
+  stop; last_state=down; sleep 5
+done

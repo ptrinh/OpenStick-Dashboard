@@ -1,0 +1,10 @@
+[Unit]
+Description=UZ801 dashboard (:8080 via tailscale serve; local IPs only while unpaired)
+After=network.target tailscaled.service
+[Service]
+ExecStart=/usr/local/bin/uz-web
+Restart=always
+RestartSec=5
+MemoryMax=60M
+[Install]
+WantedBy=multi-user.target

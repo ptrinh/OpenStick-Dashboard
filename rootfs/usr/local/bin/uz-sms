@@ -1,0 +1,243 @@
+#!/usr/bin/env python3
+"""SMS <-> Telegram gateway for UZ801 (pmOS).
+Incoming SMS (read via the modem AT port) are forwarded to the Telegram chat in
+/etc/uz/telegram.env and then deleted from the modem. From that chat only:
+  /sms <number> <text>   send an SMS
+  /status                LTE / signal / IP summary
+"""
+import os, sys, time, select, threading, json, subprocess, urllib.request, urllib.parse
+sys.path.insert(0, '/usr/local/bin')
+from importlib.machinery import SourceFileLoader
+tg = SourceFileLoader('uznotify', '/usr/local/bin/uz-notify').load_module()
+
+def conf():
+    c = {}
+    try:
+        for l in open('/etc/uz/uz.conf'):
+            l = l.split('#')[0].strip()
+            if '=' in l: k, v = l.split('=', 1); c[k] = v.strip()
+    except OSError: pass
+    return c
+BACKEND = conf().get('UZ_BACKEND', 'auto')
+if BACKEND == 'auto':
+    BACKEND = 'mm' if subprocess.run('command -v mmcli >/dev/null && systemctl is-active -q ModemManager', shell=True).returncode == 0 else 'qmi'
+
+class MM:
+    """ModemManager backend (Debian/OpenStick): mmcli instead of the AT port MM owns."""
+    def run(self, *a, t=30):
+        r = subprocess.run(['mmcli', *a], capture_output=True, text=True, timeout=t); return r.returncode, r.stdout
+    def kv(self, *a):
+        rc, out = self.run(*a, '-K'); d = {}
+        for l in out.splitlines():
+            if ':' in l: k, v = l.split(':', 1); d.setdefault(k.strip(), []).append(v.strip())
+        return d
+    def poll(self):
+        d = self.kv('-m', 'any', '--messaging-list-sms')
+        for path in [v for k, vs in d.items() if k.startswith('modem.messaging.sms') for v in vs if v.startswith('/')]:
+            idx = path.rsplit('/', 1)[1]
+            m = self.kv('-s', idx)
+            g = lambda k: (m.get(k) or [''])[0]
+            if g('sms.properties.state') != 'received' and g('sms.properties.pdu-type') not in ('deliver', 'cdma-deliver'): continue
+            text, sender, ts = g('sms.content.text'), g('sms.content.number'), g('sms.properties.timestamp')
+            self.run('-m', 'any', f'--messaging-delete-sms={idx}')
+            on_sms(self, sender, text, ts)
+    def send(self, num, text):
+        text = text.replace("'", "’").replace('\\', '/')
+        rc, out = self.run('-m', 'any', f"--messaging-create-sms=number='{num}',text='{text}'")
+        import re as _re
+        m = _re.search(r'/SMS/(\d+)', out)
+        ok = bool(m) and self.run('-s', m[1], '--send', t=90)[0] == 0
+        if m: self.run('-m', 'any', f'--messaging-delete-sms={m[1]}')
+        logsms('out' if ok else 'out-failed', num, text)
+        return ok
+
+AT = os.environ.get('UZ_AT') or next((p for p in ('/dev/wwan0at0', '/dev/wwan0at1', '/dev/smd7', '/dev/smd11') if os.path.exists(p)), None)
+lock = threading.Lock()
+
+class Port:
+    def __init__(self, path):
+        self.fd = os.open(path, os.O_RDWR | os.O_NOCTTY)
+    def cmd(self, c, timeout=10, prompt_data=None):
+        with lock:
+            self._drain()
+            os.write(self.fd, (c + '\r').encode())
+            buf, end = b'', time.time() + timeout
+            while time.time() < end:
+                r, _, _ = select.select([self.fd], [], [], 0.5)
+                if not r: continue
+                buf += os.read(self.fd, 4096)
+                if prompt_data is not None and b'> ' in buf:
+                    os.write(self.fd, prompt_data.encode() + b'\x1a'); prompt_data = None; continue
+                t = buf.decode(errors='replace')
+                if '\r\nOK\r\n' in t or t.rstrip().endswith('OK') or 'ERROR' in t: break
+            return buf.decode(errors='replace')
+    def _drain(self):
+        while select.select([self.fd], [], [], 0.05)[0]: os.read(self.fd, 4096)
+
+def ucs2(h):
+    try:
+        if h and len(h) % 4 == 0 and all(c in '0123456789ABCDEFabcdef' for c in h):
+            return bytes.fromhex(h).decode('utf-16-be')
+    except Exception: pass
+    return h
+
+def setup(p):
+    for c in ('ATE0', 'AT+CMGF=1', 'AT+CSCS="UCS2"', 'AT+CNMI=2,1,0,0,0'): p.cmd(c)
+
+def poll(p):
+    if isinstance(p, MM): return p.poll()
+    out = p.cmd('AT+CMGL="ALL"', timeout=20)
+    lines = [l for l in out.replace('\r', '').split('\n')]
+    i = 0
+    while i < len(lines):
+        l = lines[i]
+        if l.startswith('+CMGL:'):
+            f = [x.strip().strip('"') for x in l[6:].split(',')]
+            idx, sender = f[0], ucs2(f[2]) if len(f) > 2 else '?'
+            ts = (f[4] + ' ' + f[5]) if len(f) > 5 else ''
+            body = []
+            i += 1
+            while i < len(lines) and not lines[i].startswith('+CMGL:') and lines[i] not in ('OK',):
+                body.append(lines[i]); i += 1
+            text = ucs2(''.join(body).strip()) if len(body) == 1 else '\n'.join(ucs2(b) for b in body).strip()
+            p.cmd(f'AT+CMGD={idx}')
+            on_sms(p, sender, text, ts)
+            continue
+        i += 1
+
+# --- SMS remote control: "<PIN> <command>" (PIN in /etc/uz/sms.pin; optional allow-list /etc/uz/sms.allow)
+FAILS = []
+HELP = 'cmds: status where wifi on|off mode home|travel lte ts reboot help'
+def _rd(path):
+    try: return open(path).read().strip()
+    except OSError: return ''
+def _sh(c, t=60):
+    try: return subprocess.run(c, shell=True, capture_output=True, text=True, timeout=t).stdout.strip()
+    except Exception as e: return type(e).__name__
+def short_status():
+    ip = lambda i: _sh(f"ip -4 -br addr show {i} 2>/dev/null | awk '{{print $3}}' | cut -d/ -f1") or '-'
+    up = _sh("awk '{printf \"%dh\", $1/3600}' /proc/uptime")
+    return f"wifi {ip('wlan0')} lte {ip('wwan0')} ts {_sh('tailscale ip -4 2>/dev/null') or '-'} mode {_sh('. /etc/uz/uz.conf; echo $UZ_MODE')} up {up}"
+def where():
+    try: g = json.load(open('/var/lib/uz/gps.json'))
+    except Exception: return 'gps: no data'
+    if g.get('lat') is None: return f"gps: no fix yet ({g.get('sats_in_view', 0)} sats in view)"
+    age = int((time.time() - g.get('fix_time', 0)) / 60)
+    return f"https://maps.google.com/?q={g['lat']:.6f},{g['lon']:.6f} ({age} min ago{', live' if g.get('fix') else ''})"
+def run_cmd(words):
+    c = words[0].lower() if words else 'help'; a = words[1].lower() if len(words) > 1 else ''
+    if c == 'status': return short_status()
+    if c == 'where': return where()
+    if c == 'wifi' and a in ('on', 'off'): _sh(f'nmcli radio wifi {a}'); return f'wifi {a}'
+    if c == 'mode' and a in ('home', 'travel'): return (_sh(f'uz-mode {a}', 120) or 'ok')[-150:]
+    if c == 'lte': _sh('systemd-run --collect --quiet sh -c "nmcli con down lte; sleep 2; nmcli con up lte" || systemctl restart uz-lte'); return 'lte restarting'
+    if c == 'ts': _sh('systemctl restart tailscaled'); return 'tailscale restarted'
+    if c == 'reboot': _sh('systemd-run --collect --quiet --on-active=10 systemctl reboot'); return 'rebooting in 10s'
+    return HELP
+def on_sms(p, sender, text, ts):
+    pin = _rd('/etc/uz/sms.pin'); allow = [x.strip() for x in _rd('/etc/uz/sms.allow').splitlines() if x.strip()]
+    words = text.split()
+    CMDS = ('status', 'where', 'wifi', 'mode', 'lte', 'ts', 'reboot', 'help')
+    # a command is "<digits> <known command>"; anything else (e.g. "123456 is your OTP") is a normal SMS
+    is_cmd = bool(pin) and len(words) >= 2 and words[0].isdigit() and len(words[0]) == len(pin) and words[1].lower() in CMDS
+    shown = text.replace(pin, '******') if pin else text
+    logsms('in', sender, shown, ts)
+    if not is_cmd:
+        tg.send(f'✉️ SMS from {sender} ({ts})\n{text}'); return
+    now = time.time(); FAILS[:] = [t for t in FAILS if now - t < 3600]
+    ok_sender = not allow or any(sender.endswith(a.lstrip('+')[-9:]) for a in allow)
+    if words[0] != pin or not ok_sender or len(FAILS) >= 5:
+        if words[0] != pin or not ok_sender: FAILS.append(now)
+        tg.send(f'⚠️ Rejected SMS command from {sender} ({"locked" if len(FAILS) >= 5 else "bad PIN/sender"})'); return
+    reply = run_cmd(words[1:])[:300]
+    tg.send(f'📟 SMS command from {sender}: {" ".join(words[1:])}\n→ {reply}')
+    send_sms(p, sender, reply)
+
+LOG = '/var/lib/uz/sms.jsonl'
+OUTBOX = '/var/lib/uz/outbox'
+def logsms(d, peer, text, ts=''):
+    try:
+        old = open(LOG).read().splitlines()[-199:] if os.path.exists(LOG) else []
+        old.append(json.dumps({'dir': d, 'peer': peer, 'text': text, 'ts': ts or time.strftime('%y/%m/%d %H:%M:%S')}, ensure_ascii=False))
+        fd = os.open(LOG + '.tmp', os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, 'w') as f: f.write('\n'.join(old) + '\n')
+        os.replace(LOG + '.tmp', LOG)
+    except Exception as ex: print('log error', type(ex).__name__, file=sys.stderr)
+
+def outbox(p):
+    # SMS queued by the dashboard (uz-web): <id>.json {"to","text"} -> <id>.done {"ok"}
+    if not os.path.isdir(OUTBOX): return
+    for f in sorted(os.listdir(OUTBOX)):
+        if not f.endswith('.json'): continue
+        path = os.path.join(OUTBOX, f)
+        try: m = json.load(open(path))
+        except Exception: os.remove(path); continue
+        ok = send_sms(p, m['to'], m['text'])
+        open(path[:-5] + '.done', 'w').write(json.dumps({'ok': ok})); os.remove(path)
+
+def tohex(s): return s.encode('utf-16-be').hex().upper()
+
+def send_sms(p, num, text):
+    if isinstance(p, MM): return p.send(num, text)
+    p.cmd('AT+CSMP=17,167,0,8')
+    r = p.cmd(f'AT+CMGS="{tohex(num)}"', timeout=60, prompt_data=tohex(text))
+    ok = 'OK' in r and 'ERROR' not in r
+    logsms('out' if ok else 'out-failed', num, text)
+    return ok
+
+def status():
+    def sh(c):
+        try: return subprocess.run(c, shell=True, capture_output=True, text=True, timeout=25).stdout.strip()
+        except Exception as e: return str(e)
+    q = 'qmicli -d /dev/wwan0qmi0 --device-open-proxy'
+    if BACKEND == 'mm':
+        return '\n'.join(['IP: ' + sh("ip -4 -br addr show wwan0 | awk '{print $3}'"),
+            sh("mmcli -m any | grep -E 'state|operator name|signal quality|access tech|registration' | head -8"),
+            'tailscale: ' + sh('tailscale ip -4 2>/dev/null || echo -'), 'uptime: ' + sh('uptime')])
+    return '\n'.join([
+        'IP: ' + sh("ip -4 -br addr show wwan0 | awk '{print $3}'"),
+        sh(f"{q} --nas-get-signal-strength | grep -E 'Network|RSSI|RSRP|SNR' | head -6"),
+        sh(f"{q} --nas-get-serving-system | grep -E 'Registration|Description|PLMN' | head -4"),
+        'tailscale: ' + sh('tailscale ip -4 2>/dev/null || echo -'),
+        'uptime: ' + sh('uptime'),
+    ])
+
+def bot(p):
+    e = tg.env(); tok, chat = e.get('TG_TOKEN'), str(e.get('TG_CHAT', ''))
+    if not tok: return
+    off = 0
+    while True:
+        try:
+            u = f'https://api.telegram.org/bot{tok}/getUpdates?timeout=50&offset={off}'
+            res = json.load(urllib.request.urlopen(u, timeout=70))
+            for up in res.get('result', []):
+                off = up['update_id'] + 1
+                m = up.get('message') or {}
+                if str(m.get('chat', {}).get('id')) != chat: continue
+                t = (m.get('text') or '').strip()
+                if t.startswith('/sms '):
+                    parts = t.split(None, 2)
+                    if len(parts) < 3: tg.send('usage: /sms <number> <text>'); continue
+                    tg.send('✅ sent' if send_sms(p, parts[1], parts[2]) else '❌ send failed')
+                elif t.startswith('/where'):
+                    tg.send(where())
+                elif t.startswith('/status'):
+                    tg.send(status())
+        except Exception:
+            time.sleep(15)
+
+def main():
+    if BACKEND == 'mm':
+        p = MM()
+    else:
+        if not AT: print('no AT port found', file=sys.stderr); sys.exit(1)
+        p = Port(AT); setup(p)
+    threading.Thread(target=bot, args=(p,), daemon=True).start()
+    while True:
+        try: poll(p); outbox(p)
+        except Exception as ex: print('poll error', type(ex).__name__, file=sys.stderr)
+        for _ in range(int(os.environ.get('UZ_SMS_INTERVAL', '15'))):
+            time.sleep(1)
+            if os.path.isdir(OUTBOX) and any(f.endswith('.json') for f in os.listdir(OUTBOX)): break
+
+if __name__ == '__main__': main()

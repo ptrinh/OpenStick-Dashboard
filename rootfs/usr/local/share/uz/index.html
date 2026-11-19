@@ -1,0 +1,549 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#000000">
+<title>UZ801</title>
+<style>
+:root{
+  --bg:#000;--text:#f5f5f7;--dim:#a1a1a6;--faint:#6e6e73;
+  --glass:rgba(255,255,255,.07);--glass-hi:rgba(255,255,255,.13);--line:rgba(255,255,255,.10);
+  --blue:#0a84ff;--green:#30d158;--orange:#ff9f0a;--red:#ff453a;--yellow:#ffd60a;
+  --radius:26px;--ease:cubic-bezier(.2,.8,.2,1);
+  --font:-apple-system,BlinkMacSystemFont,"SF Pro Display","SF Pro Text",Inter,system-ui,sans-serif;
+  --mono:ui-monospace,"SF Mono",Menlo,monospace;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{margin:0;min-height:100%}
+body{background:var(--bg);color:var(--text);font:500 17px/1.45 var(--font);-webkit-font-smoothing:antialiased;overflow-x:hidden}
+button,input,textarea,select{font:inherit;color:inherit}
+a{color:inherit}
+[data-focus]{outline:none;-webkit-tap-highlight-color:transparent}
+
+/* ambient Top Shelf light */
+.ambient{position:fixed;inset:0;z-index:-1;overflow:hidden}
+.ambient i{position:absolute;width:70vmax;height:70vmax;border-radius:50%;filter:blur(120px);opacity:.30;animation:drift 28s ease-in-out infinite alternate}
+.ambient i:nth-child(1){background:#2b5cff;top:-35vmax;left:-20vmax}
+.ambient i:nth-child(2){background:#8a2be2;bottom:-40vmax;right:-25vmax;animation-delay:-9s;opacity:.2}
+.ambient i:nth-child(3){background:#00c2a8;top:30%;left:45%;width:40vmax;height:40vmax;animation-delay:-17s;opacity:.13}
+body.offline .ambient i:nth-child(1){background:#ff453a}
+@keyframes drift{to{transform:translate(8vmax,6vmax) scale(1.15)}}
+
+/* top bar */
+.top{position:sticky;top:0;z-index:10;display:flex;align-items:center;gap:14px;padding:max(16px,env(safe-area-inset-top)) clamp(16px,4vw,56px) 16px;background:linear-gradient(#000d,#0000)}
+.brand{display:flex;align-items:center;gap:10px;font-weight:700;letter-spacing:-.01em;font-size:18px}
+.brand-mark{width:30px;height:30px;border-radius:8px;display:grid;place-items:center;background:linear-gradient(135deg,#0a84ff,#5e5ce6);box-shadow:0 0 0 1px #ffffff1f}
+.brand-mark svg{width:18px;height:18px}
+.spacer{flex:1}
+.seg{display:flex;gap:2px;padding:3px;border-radius:999px;background:var(--glass)}
+.seg button{border:0;background:none;border-radius:999px;padding:7px 16px;font-size:14px;font-weight:700;color:var(--dim);cursor:pointer;transition:all .25s var(--ease)}
+.seg button.on{background:var(--glass-hi);color:var(--text)}
+.seg button:is(:hover,:focus-visible){background:var(--text);color:#000}
+.clock{color:var(--faint);font-size:14px;font-weight:600;font-variant-numeric:tabular-nums}
+
+main{padding:0 clamp(16px,4vw,56px) 64px;max-width:1320px;margin:0 auto}
+
+/* hero */
+.hero{padding:3vh 0 8px;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:24px;align-items:end;animation:enter .55s var(--ease) both}
+@keyframes enter{from{opacity:0;transform:translateY(18px) scale(.985)}}
+.eyebrow{color:var(--dim);font-size:14px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;margin:0 0 8px}
+h1{font-size:clamp(40px,7vw,80px);line-height:1.02;letter-spacing:-.035em;font-weight:800;margin:0}
+h1 em{font-style:normal;background:linear-gradient(90deg,#fff,#8e9aff 60%,#6ee7d8);-webkit-background-clip:text;background-clip:text;color:transparent}
+.lead{color:var(--dim);font-size:clamp(17px,2vw,21px);margin:12px 0 0}
+.bars{display:flex;gap:6px;align-items:flex-end;height:64px;padding-bottom:6px}
+.bars i{width:12px;border-radius:4px;background:#ffffff22;transition:background .4s var(--ease)}
+.bars i.on{background:var(--text);box-shadow:0 0 18px #ffffff40}
+
+/* shelves */
+.shelf-title{display:flex;align-items:baseline;gap:14px;margin:44px 0 16px}
+.shelf-title h2{font-size:24px;letter-spacing:-.02em;font-weight:700;margin:0}
+.shelf-title span{color:var(--faint);font-size:15px;font-weight:600}
+.row{display:grid;gap:20px}
+.top-shelf{grid-template-columns:repeat(auto-fit,minmax(200px,1fr))}
+.apps{grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:20px}
+
+/* tiles with tvOS lift + sheen */
+.tile{--mx:50%;--my:0%;--rx:0deg;--ry:0deg;position:relative;display:flex;flex-direction:column;border:0;text-align:left;cursor:pointer;overflow:hidden;border-radius:var(--radius);background:var(--glass);box-shadow:0 1px 0 #ffffff14 inset;transform:perspective(900px) rotateX(var(--rx)) rotateY(var(--ry));transition:transform .35s var(--ease),box-shadow .35s var(--ease),background .3s;padding:0}
+.tile::after{content:"";position:absolute;inset:0;border-radius:inherit;pointer-events:none;background:radial-gradient(circle at var(--mx) var(--my),#ffffff2e,transparent 55%);opacity:0;transition:opacity .3s}
+.tile:is(:hover,:focus-visible){transform:perspective(900px) rotateX(var(--rx)) rotateY(var(--ry)) scale(1.06);box-shadow:0 30px 60px #000c,0 0 0 1px #ffffff26 inset;z-index:2}
+.tile:is(:hover,:focus-visible)::after{opacity:1}
+
+/* status cards (top shelf) */
+.card{min-height:176px;padding:22px;justify-content:space-between;background:var(--g,var(--glass))}
+.card .k{display:flex;align-items:center;gap:10px;font-size:14px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:#ffffffc0}
+.card .k svg{width:20px;height:20px}
+.card .v{font-size:clamp(20px,1.9vw,28px);font-weight:800;letter-spacing:-.025em;line-height:1.15;margin-top:18px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.card .v.long{font-size:clamp(16px,1.45vw,22px);letter-spacing:-.01em}
+.card .s{color:#ffffffb0;font-size:15px;margin-top:6px}
+.dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--faint);margin-right:8px;vertical-align:1px}
+.dot.ok{background:var(--green);box-shadow:0 0 10px var(--green)}
+.dot.warn{background:var(--orange);box-shadow:0 0 10px var(--orange)}
+.dot.bad{background:var(--red);box-shadow:0 0 10px var(--red)}
+
+/* app-icon tiles */
+.app{background:transparent;box-shadow:none;overflow:visible}
+.app::after{display:none}
+.app .icon{aspect-ratio:16/10;border-radius:22px;display:grid;place-items:center;position:relative;overflow:hidden;background:var(--g,linear-gradient(135deg,#3a3a3c,#1c1c1e));box-shadow:0 1px 0 #ffffff30 inset,0 10px 30px #0006;transition:box-shadow .35s var(--ease)}
+.app .icon svg{width:36%;height:36%;color:#fff;filter:drop-shadow(0 4px 10px #0004)}
+.app .icon::after{content:"";position:absolute;inset:0;pointer-events:none;background:radial-gradient(circle at var(--mx) var(--my),#ffffff40,transparent 55%);opacity:0;transition:opacity .3s}
+.app:is(:hover,:focus-visible){box-shadow:none}
+.app:is(:hover,:focus-visible) .icon{box-shadow:0 30px 60px #000d}
+.app:is(:hover,:focus-visible) .icon::after{opacity:1}
+.app .name{margin:12px 4px 0;font-weight:600;font-size:16px}
+.app .sub{margin:1px 4px 0;color:var(--faint);font-size:13px;min-height:18px}
+.app .icon .badge{position:absolute;top:10px;right:10px;font-size:11px;font-weight:800;letter-spacing:.04em;padding:4px 8px;border-radius:8px;background:#0006;backdrop-filter:blur(10px);color:#fffd}
+.app.danger .icon{--g:linear-gradient(135deg,#ff453a,#b0122b)}
+
+/* list cards (sms, probes, disk) */
+.list{display:flex;flex-direction:column;gap:12px}
+.item{display:grid;grid-template-columns:44px 1fr auto;gap:14px;align-items:center;padding:16px 20px;border-radius:20px;background:var(--glass);animation:enter .5s var(--ease) both}
+.item .ic{width:40px;height:40px;border-radius:12px;display:grid;place-items:center;background:var(--glass-hi)}
+.item .ic svg{width:20px;height:20px}
+.item b{font-weight:700}
+.item small{display:block;color:var(--faint);font-size:13px;margin-top:2px}
+.item p{margin:4px 0 0;color:var(--dim);overflow-wrap:anywhere}
+.meter{height:8px;border-radius:4px;background:#ffffff14;overflow:hidden;margin-top:8px}
+.meter i{display:block;height:100%;border-radius:4px;background:var(--text);transition:width .6s var(--ease)}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:20px}
+.panel{padding:24px;border-radius:var(--radius);background:var(--glass);box-shadow:0 1px 0 #ffffff14 inset}
+.panel h3{margin:0 0 14px;font-size:15px;color:var(--dim);font-weight:700;letter-spacing:.04em;text-transform:uppercase}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:8px 18px;font-size:16px}
+.kv span:nth-child(odd){color:var(--faint)}
+.empty{color:var(--faint);padding:20px;border-radius:20px;background:var(--glass)}
+
+/* buttons, fields */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:10px;min-width:120px;padding:14px 24px;border:0;border-radius:16px;background:var(--glass-hi);color:var(--text);font-size:17px;font-weight:600;cursor:pointer;transition:transform .3s var(--ease),background .2s,color .2s,box-shadow .3s}
+.btn.primary{background:var(--text);color:#000}
+.btn.red{background:#ff453a33;color:#ff6961}
+.btn:disabled{opacity:.35;cursor:default}
+.btn:not(:disabled):is(:hover,:focus-visible){background:var(--text);color:#000;transform:scale(1.05);box-shadow:0 18px 40px #0009,0 0 0 1px #fff4}
+.btn.sm{min-width:0;padding:10px 16px;font-size:15px;border-radius:13px}
+.actions{display:flex;gap:12px;flex-wrap:wrap;margin-top:22px}
+.field{display:block;width:100%;background:var(--glass);border:0;border-radius:16px;padding:16px 18px;outline:none;box-shadow:0 0 0 1px var(--line) inset;transition:box-shadow .3s var(--ease);font-size:17px;margin-bottom:12px;resize:vertical}
+.field::placeholder{color:#ffffff40}
+.field:focus{box-shadow:0 0 0 2px var(--text) inset,0 20px 50px #0008}
+.big-secret{font:700 clamp(28px,5vw,44px)/1.1 var(--mono);letter-spacing:.06em;padding:22px 24px;border-radius:20px;background:var(--glass);user-select:all;overflow-wrap:anywhere;margin:6px 0 0}
+.chips{display:flex;gap:10px;flex-wrap:wrap}
+.chip{border:0;cursor:pointer;padding:10px 18px;border-radius:999px;background:var(--glass-hi);font-weight:700;font-size:15px;transition:all .25s var(--ease)}
+.chip.on{background:var(--text);color:#000}
+.chip:is(:hover,:focus-visible){background:var(--text);color:#000;transform:scale(1.05)}
+details.log{margin-top:44px}
+details.log summary{cursor:pointer;font-size:20px;font-weight:700;list-style:none;display:flex;gap:10px;align-items:center}
+details.log summary::-webkit-details-marker{display:none}
+details.log summary::before{content:"›";color:var(--dim);transition:transform .25s var(--ease)}
+details.log[open] summary::before{transform:rotate(90deg)}
+pre{white-space:pre-wrap;font:13px/1.5 var(--mono);color:var(--dim);background:var(--glass);padding:18px;border-radius:20px;max-height:340px;overflow:auto;margin:14px 0 0}
+
+/* sheet */
+.sheet{position:fixed;inset:0;z-index:50;display:grid;place-items:center;padding:16px}
+.sheet[hidden]{display:none}
+.sheet-backdrop{position:absolute;inset:0;background:#000a;backdrop-filter:blur(30px) saturate(1.4);-webkit-backdrop-filter:blur(30px) saturate(1.4);animation:fade .3s both}
+@keyframes fade{from{opacity:0}}
+.sheet-card{position:relative;width:min(760px,100%);max-height:calc(100vh - 32px);overflow:auto;border-radius:34px;background:#1c1c1ef2;box-shadow:0 40px 120px #000,0 0 0 1px #ffffff14 inset;display:grid;grid-template-columns:150px 1fr;gap:28px;padding:32px;animation:pop .45s var(--ease) both}
+@keyframes pop{from{opacity:0;transform:scale(.94) translateY(20px)}}
+.sheet-card .sicon{aspect-ratio:1;border-radius:30px;display:grid;place-items:center;background:var(--g);box-shadow:0 1px 0 #ffffff30 inset,0 20px 40px #0008}
+.sheet-card .sicon svg{width:44%;height:44%;color:#fff}
+.sheet-card h2{font-size:34px;letter-spacing:-.025em;margin:0 0 6px}
+.sheet-card .desc{color:var(--dim);margin:0 0 20px}
+.toast{position:fixed;left:50%;bottom:max(24px,env(safe-area-inset-bottom));transform:translateX(-50%) translateY(20px);opacity:0;z-index:60;padding:14px 22px;border-radius:18px;background:#2c2c2ef2;box-shadow:0 20px 60px #000c,0 0 0 1px #ffffff1a inset;font-weight:600;transition:all .4s var(--ease);max-width:min(560px,90vw);pointer-events:none}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+.progress{height:6px;border-radius:3px;background:#ffffff1a;overflow:hidden;margin:6px 0 12px}
+.progress i{display:block;height:100%;width:0;background:var(--blue);transition:width .2s}
+.foot{margin-top:56px;color:var(--faint);font-size:13px}
+code{font-family:var(--mono);font-size:.92em;color:var(--dim)}
+#lock[hidden],main[hidden],.seg[hidden]{display:none!important}
+.netrow{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:14px;margin-top:4px}
+.stat{padding:16px 18px;border-radius:20px;background:var(--glass)}
+.stat .l{color:var(--faint);font-size:13px;font-weight:700;letter-spacing:.04em;text-transform:uppercase}
+.stat .n{font-size:22px;font-weight:800;letter-spacing:-.02em;margin-top:6px;overflow-wrap:anywhere}
+.stat .n small{font-size:14px;color:var(--dim);font-weight:600;margin-left:4px}
+
+@media (min-width:1100px){.top-shelf{grid-template-columns:repeat(5,1fr)}.apps{grid-template-columns:repeat(9,1fr)}}
+@media (max-width:760px){
+  .hero{grid-template-columns:1fr}.bars{height:40px}
+  .sheet-card{grid-template-columns:1fr;padding:24px;gap:16px}.sheet-card .sicon{width:84px;border-radius:22px}
+  .apps{grid-template-columns:repeat(3,1fr);gap:14px}.app .name{font-size:14px}.app .sub{display:none}
+  .top-shelf{grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.card{min-height:150px;padding:18px}.card .v{font-size:22px}
+  .clock{display:none}
+}
+@media (max-width:420px){.apps{grid-template-columns:repeat(2,1fr)}.top-shelf{grid-template-columns:1fr}}
+@media (prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<div class="ambient" aria-hidden="true"><i></i><i></i><i></i></div>
+
+<header class="top">
+  <div class="brand"><span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round"><path d="M5 19V15M10 19V11M15 19V7M20 19V3"/></svg></span>UZ801</div>
+  <div class="spacer"></div>
+  <span class="clock" id="upd">—</span>
+  <div class="seg" role="group" id="modeseg"><button data-focus data-mode="home">Home</button><button data-focus data-mode="travel">Travel</button></div>
+  <div class="seg" role="group" id="langseg"><button data-focus data-lang="en">EN</button><button data-focus data-lang="vi">VI</button><button data-focus data-lang="zh">中文</button></div>
+</header>
+
+<section id="lock" hidden style="min-height:80vh;display:grid;place-items:center;padding:0 24px"></section>
+<main id="app">
+  <section class="hero">
+    <div>
+      <p class="eyebrow" id="eyebrow">…</p>
+      <h1 id="title">UZ801</h1>
+      <p class="lead" id="lead"></p>
+    </div>
+    <div class="bars" id="bars"><i style="height:25%"></i><i style="height:50%"></i><i style="height:75%"></i><i style="height:100%"></i></div>
+  </section>
+
+  <div id="banner"></div>
+  <div class="row top-shelf" id="cards"></div>
+
+  <div class="shelf-title"><h2 data-t="network"></h2><span id="netsub"></span></div>
+  <div class="netrow" id="net"></div>
+
+  <div class="shelf-title"><h2 data-t="controls"></h2></div>
+  <div class="row apps" id="controls"></div>
+
+  <div class="shelf-title"><h2 data-t="messages"></h2><span id="smscount"></span></div>
+  <div id="sms"></div>
+
+  <div class="shelf-title"><h2 data-t="usbdrive"></h2><span id="stfree"></span></div>
+  <div class="row apps" id="images"></div>
+
+  <div class="shelf-title"><h2 data-t="leds"></h2></div>
+  <div class="row apps" id="leds"></div>
+
+  <div class="shelf-title"><h2 data-t="system"></h2></div>
+  <div class="grid2">
+    <div class="panel"><h3 data-t="storage"></h3><div id="disk"></div></div>
+    <div class="panel"><h3><span data-t="probes"></span> <span id="probevia" style="text-transform:none;letter-spacing:0;font-weight:600;color:var(--faint)"></span></h3><div id="probe"></div></div>
+  </div>
+
+  <details class="log"><summary data-t="log"></summary><pre id="log"></pre></details>
+  <p class="foot" data-t="foot"></p>
+</main>
+
+<div class="sheet" id="sheet" hidden><div class="sheet-backdrop" data-close></div><div class="sheet-card" role="dialog" aria-modal="true" id="card"></div></div>
+<div class="toast" id="toast" role="status"></div>
+
+<script>
+const $=id=>document.getElementById(id);
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);
+
+/* ---------- i18n: English is the main language ---------- */
+const L={
+en:{passkeys:'Passkeys',pkSub:'Dashboard sign-in',locked:'Locked',lockedD:'This dashboard is protected with a passkey.',pkSignIn:'Sign in with passkey',lockedTs:'Open this dashboard through your Tailscale address to sign in with a passkey.',pkCreate:'Create passkey',pkName:'Name, e.g. iPhone',pkNone:'No passkeys yet. Once you create one, the dashboard requires it to sign in.',pkOn:'Required to open the dashboard',pkDel:'Remove',signOut:'Sign out',pkHttps:'Passkeys work only on the HTTPS Tailscale address.',pkUnsupported:'This browser does not support passkeys.',created:'created',lastUsed:'last used',never:'never',pkRecover:'Lost every passkey? Run <code>uz-passkey reset</code> over Tailscale SSH or USB.',exitNode:'Exit node',exitOn:'Advertised',exitOff:'Off',exitApproved:'approved by admin',exitPending:'waiting for admin approval in the Tailscale console',exitD:'Lets your other devices send all their Internet traffic through this stick (its 4G / Wi-Fi uplink).',turnOn:'Turn on',turnOff:'Turn off',notPaired:'Not paired',signIn:'Sign in to Tailscale',signInD:'This stick has no Tailscale account. Until one signs in, the dashboard is open on local addresses only.',openLink:'Open sign-in page',getLink:'Get sign-in link',account:'Account',tailnet:'Tailnet',dnsName:'Name',pair:'Pair with another account',pairQ:'Pair with another account?',pairD:'The stick signs out of this tailnet now. This page will disconnect — continue on a local address below, then sign in with the new account.',pairGo:'Sign out & pair',localAddr:'Local addresses',localNote:'You are on a local address. It stops working once an account is paired.',viaUp:'via',save:'Save',scan:'Scan to join',ssid:'Network',newPsk:'New Wi-Fi password (8–63 characters)',newPin:'New PIN (4–8 digits)',network:'Network',controls:'Controls',messages:'Messages',usbdrive:'USB drive',leds:'LEDs',system:'System',storage:'Storage',probes:'Uptime checks',log:'Log',
+ foot:'Reachable only over Tailscale · arrow keys to move, Esc to close',updated:'Updated',offline:'Disconnected',
+ via:'Internet via',none:'no Internet',noSim:'No <em>SIM</em>',searching:'Searching',ready:'Modem ready',up:'Up',ramFree:'MB RAM free',noIp:'no IP',
+ c4g:'4G',cInternet:'Internet',cTs:'Tailscale',cSys:'System',cLoc:'Location',tsSub:'Dashboard & SSH',load:'load',noFix:'No fix',used:'used',sats:'satellites',
+ publicIp:'Public IP',latency:'Latency to 1.1.1.1',wifi:'Wi-Fi',usb:'USB host',hotspotOn:'Broadcasting hotspot',wifiClient:'Wi-Fi client',signal:'signal',
+ usbNone:'No computer',usbHost:'Computer attached',usbAvail:'Computer is sharing Internet',usbInUse:'Using computer’s Internet',notConnected:'Not connected',
+ reconnect:'Reconnect 4G',wifiPw:'Wi-Fi password',hotspot:'Hotspot',kbd:'USB keyboard',on:'On',off:'Off',locate:'Find stick',blink10:'Blink 10 s',check:'Check',probesNow:'Run checks',
+ sshPw:'SSH password',smsPin:'SMS PIN',remote:'Remote control',reboot:'Restart',stick:'Stick',sendSms:'Send SMS',viaSim:'Via the SIM in the stick',
+ inMsg:'Received',outMsg:'Sent',failMsg:'Failed',noSms:'No messages yet.',free:'Free',attached:'attached',upload:'Upload image',mkfat:'Blank FAT drive',create:'Create',
+ eject:'Eject',ejectSub:'Detach from computer',red:'Red',green:'Green',blue:'Blue',findAll:'Blink all 3',images:'Images',emmc:'eMMC',noData:'No data yet',
+ lm:{auto:'Auto',on:'On',off:'Off',blink:'Fast blink',slow:'Slow blink',heartbeat:'Heartbeat'},
+ disk:{system:'System (/)',boot:'Boot',images:'Image store'},
+ close:'Close',sReconnect:'Drop and re-establish the 4G data session.',sMode:'Home: share 4G with the USB computer, exit node. Travel: own Wi-Fi hotspot (needs 4G or Internet Sharing over USB).',
+ sGps:'The modem GPS needs sky view — put the stick near a window or outdoors. Telegram: /where',status:'Status',locating:'Locating',sat:'Satellites',
+ sPsk:'Stick hotspot (Travel mode).',sPin:'Text the stick’s SIM number: <code>&lt;PIN&gt; status | where | wifi on|off | mode home|travel | lte | ts | reboot</code>. 5 wrong tries per hour locks it.',
+ sReboot:'Restart?',sRebootD:'The stick will be offline for about 40 seconds.',sPw:'For <code>user</code> (SSH over USB). Tailscale SSH needs no password.',min10:'At least 10 characters',change:'Change password',
+ sSms:'Sent through the SIM in the stick.',phone:'Phone number (+84…)',text:'Message',send:'Send',sending:'Sending…',
+ ledRed:'Red LED',ledGreen:'Green LED',ledBlue:'Blue LED',ledRedD:'Auto: steady with Internet, fast blink when offline.',ledGreenD:'Auto: Wi-Fi, flickers with traffic.',ledBlueD:'Auto: 4G, slow blink while searching.',
+ sKbd:'The stick acts as a keyboard for the computer it is plugged into. macOS may show Keyboard Setup Assistant once — just close it.',kbdOn:'Turn on keyboard',kbdOff:'Turn off keyboard',
+ kbdText:'Text to type (US layout, ASCII)',typeIt:'Type it',live:'Live typing',liveOn:'ON · Esc twice to stop',sUpload:'one file up to',speed:'Speed depends on Wi-Fi (~1 MB/s).',
+ sMkfat:'Any computer it is attached to sees a USB drive named UZ801.',name:'Name, e.g. share.img',sizeMb:'Size (MB)',sImgOn:'Attached',sImgOff:'Attach as a USB drive for the computer the stick is plugged into.',reconnects:'Attach/eject reconnects USB for ~2 s.',
+ rw:'Read-write',ro:'Read-only',cdrom:'CD-ROM',del:'Delete',chooseFile:'Choose a file first',done:'Done',err:'Error',days:'d',hours:'h',mins:'m',minAgo:'min ago',
+ home:'Home',travel:'Travel'},
+vi:{passkeys:'Passkey',pkSub:'Đăng nhập dashboard',locked:'Đã khoá',lockedD:'Dashboard được bảo vệ bằng passkey.',pkSignIn:'Đăng nhập bằng passkey',lockedTs:'Mở dashboard bằng địa chỉ Tailscale để đăng nhập bằng passkey.',pkCreate:'Tạo passkey',pkName:'Tên, vd iPhone',pkNone:'Chưa có passkey. Tạo xong thì dashboard bắt buộc đăng nhập bằng passkey.',pkOn:'Bắt buộc khi mở dashboard',pkDel:'Xoá',signOut:'Đăng xuất',pkHttps:'Passkey chỉ dùng được trên địa chỉ HTTPS của Tailscale.',pkUnsupported:'Trình duyệt này không hỗ trợ passkey.',created:'tạo',lastUsed:'dùng lần cuối',never:'chưa',pkRecover:'Mất hết passkey? Chạy <code>uz-passkey reset</code> qua Tailscale SSH hoặc cáp USB.',exitNode:'Exit node',exitOn:'Đang bật',exitOff:'Tắt',exitApproved:'admin đã duyệt',exitPending:'chờ admin duyệt trong trang quản trị Tailscale',exitD:'Cho các thiết bị khác đi Internet qua stick này (bằng 4G / Wi-Fi của stick).',turnOn:'Bật',turnOff:'Tắt',notPaired:'Chưa pair',signIn:'Đăng nhập Tailscale',signInD:'Stick chưa có tài khoản Tailscale. Cho tới khi đăng nhập, dashboard chỉ mở trên địa chỉ trong mạng nội bộ.',openLink:'Mở trang đăng nhập',getLink:'Lấy link đăng nhập',account:'Tài khoản',tailnet:'Tailnet',dnsName:'Tên',pair:'Pair sang tài khoản khác',pairQ:'Pair sang tài khoản khác?',pairD:'Stick sẽ đăng xuất khỏi tailnet hiện tại ngay. Trang này sẽ mất kết nối — mở tiếp bằng địa chỉ nội bộ bên dưới rồi đăng nhập tài khoản mới.',pairGo:'Đăng xuất & pair',localAddr:'Địa chỉ nội bộ',localNote:'Bạn đang vào qua địa chỉ nội bộ. Đường này sẽ đóng khi đã pair tài khoản.',viaUp:'qua',save:'Lưu',scan:'Quét để kết nối',ssid:'Tên mạng',newPsk:'Mật khẩu Wi-Fi mới (8–63 ký tự)',newPin:'PIN mới (4–8 chữ số)',network:'Mạng',controls:'Điều khiển',messages:'Tin nhắn',usbdrive:'Ổ USB giả lập',leds:'Đèn LED',system:'Hệ thống',storage:'Bộ nhớ',probes:'Kiểm tra dịch vụ',log:'Log',
+ foot:'Chỉ truy cập được qua Tailscale · phím mũi tên để di chuyển, Esc để đóng',updated:'Cập nhật',offline:'Mất kết nối',
+ via:'Internet qua',none:'không có mạng',noSim:'Chưa có <em>SIM</em>',searching:'Đang tìm sóng',ready:'Modem sẵn sàng',up:'Bật',ramFree:'MB RAM trống',noIp:'chưa có IP',
+ c4g:'4G',cInternet:'Internet',cTs:'Tailscale',cSys:'Hệ thống',cLoc:'Vị trí',tsSub:'Dashboard & SSH',load:'tải',noFix:'Chưa có fix',used:'dùng',sats:'vệ tinh',
+ publicIp:'IP công khai',latency:'Độ trễ tới 1.1.1.1',wifi:'Wi-Fi',usb:'Máy qua USB',hotspotOn:'Đang phát hotspot',wifiClient:'Đang kết nối Wi-Fi',signal:'sóng',
+ usbNone:'Chưa cắm máy',usbHost:'Đã cắm máy tính',usbAvail:'Máy tính đang share Internet',usbInUse:'Đang dùng Internet của máy tính',notConnected:'Chưa kết nối',
+ reconnect:'Nối lại 4G',wifiPw:'Mật khẩu Wi-Fi',hotspot:'Hotspot',kbd:'Bàn phím USB',on:'Đang bật',off:'Tắt',locate:'Tìm stick',blink10:'Nháy 10 giây',check:'Kiểm tra',probesNow:'Kiểm tra ngay',
+ sshPw:'Mật khẩu SSH',smsPin:'PIN SMS',remote:'Điều khiển',reboot:'Khởi động lại',stick:'Stick',sendSms:'Gửi SMS',viaSim:'Qua SIM trong stick',
+ inMsg:'Đến',outMsg:'Đã gửi',failMsg:'Gửi lỗi',noSms:'Chưa có tin nhắn.',free:'Trống',attached:'đang gắn',upload:'Upload image',mkfat:'Ổ FAT trống',create:'Tạo',
+ eject:'Tháo ổ',ejectSub:'Ngắt khỏi máy',red:'Đỏ',green:'Xanh lá',blue:'Xanh dương',findAll:'Nháy cả 3',images:'Image',emmc:'eMMC',noData:'Chưa có dữ liệu',
+ lm:{auto:'Tự động',on:'Bật',off:'Tắt',blink:'Nháy nhanh',slow:'Nháy chậm',heartbeat:'Nhịp tim'},
+ disk:{system:'Hệ thống (/)',boot:'Boot',images:'Kho image'},
+ close:'Đóng',sReconnect:'Ngắt và kết nối lại phiên dữ liệu 4G.',sMode:'Home: chia 4G cho máy cắm USB, exit node. Travel: phát Wi-Fi riêng (cần 4G hoặc Internet Sharing qua USB).',
+ sGps:'GPS của modem cần thấy trời — đặt stick gần cửa sổ hoặc ngoài trời. Telegram: /where',status:'Trạng thái',locating:'Đang định vị',sat:'Vệ tinh',
+ sPsk:'Hotspot của stick (chế độ Travel).',sPin:'Nhắn tới số SIM của stick: <code>&lt;PIN&gt; status | where | wifi on|off | mode home|travel | lte | ts | reboot</code>. Sai 5 lần/giờ sẽ khoá.',
+ sReboot:'Khởi động lại?',sRebootD:'Stick sẽ mất kết nối khoảng 40 giây.',sPw:'Cho <code>user</code> (SSH qua cáp USB). Qua Tailscale không cần mật khẩu.',min10:'Tối thiểu 10 ký tự',change:'Đổi mật khẩu',
+ sSms:'Gửi qua SIM trong stick.',phone:'Số điện thoại (+84…)',text:'Nội dung',send:'Gửi',sending:'Đang gửi…',
+ ledRed:'Đèn đỏ',ledGreen:'Đèn xanh lá',ledBlue:'Đèn xanh dương',ledRedD:'Tự động: sáng khi có internet, nháy nhanh khi mất mạng.',ledGreenD:'Tự động: Wi-Fi, chớp theo lưu lượng.',ledBlueD:'Tự động: 4G, nháy chậm khi đang tìm sóng.',
+ sKbd:'Stick giả làm bàn phím cho máy nó đang cắm. Lần đầu bật, macOS có thể hiện Keyboard Setup Assistant — đóng đi.',kbdOn:'Bật bàn phím',kbdOff:'Tắt bàn phím',
+ kbdText:'Nội dung sẽ được gõ (bàn phím US, không dấu)',typeIt:'Gõ vào máy',live:'Gõ trực tiếp',liveOn:'BẬT · Esc 2 lần để tắt',sUpload:'mỗi file tối đa',speed:'Tốc độ phụ thuộc Wi-Fi (~1 MB/s).',
+ sMkfat:'Gắn vào máy nào thì máy đó thấy ổ USB tên UZ801.',name:'Tên, vd share.img',sizeMb:'Dung lượng (MB)',sImgOn:'Đang gắn',sImgOff:'Gắn làm ổ USB cho máy đang cắm stick.',reconnects:'Gắn/tháo làm USB kết nối lại ~2 giây.',
+ rw:'Gắn đọc-ghi',ro:'Chỉ đọc',cdrom:'CD-ROM',del:'Xoá',chooseFile:'Chọn file trước',done:'Xong',err:'Lỗi',days:' ngày',hours:' giờ',mins:' phút',minAgo:'phút trước',
+ home:'Home',travel:'Travel'},
+zh:{passkeys:'通行密钥',pkSub:'控制台登录',locked:'已锁定',lockedD:'此控制台受通行密钥保护。',pkSignIn:'使用通行密钥登录',lockedTs:'请通过 Tailscale 地址打开控制台，以使用通行密钥登录。',pkCreate:'创建通行密钥',pkName:'名称，例如 iPhone',pkNone:'尚无通行密钥。创建后，打开控制台必须使用通行密钥登录。',pkOn:'打开控制台时必须验证',pkDel:'删除',signOut:'退出登录',pkHttps:'通行密钥只能在 Tailscale 的 HTTPS 地址上使用。',pkUnsupported:'此浏览器不支持通行密钥。',created:'创建于',lastUsed:'上次使用',never:'从未',pkRecover:'丢失所有通行密钥？通过 Tailscale SSH 或 USB 运行 <code>uz-passkey reset</code>。',exitNode:'出口节点',exitOn:'已开启',exitOff:'关闭',exitApproved:'管理员已批准',exitPending:'等待管理员在 Tailscale 控制台批准',exitD:'让你的其他设备通过本设备（其 4G / Wi-Fi）访问互联网。',turnOn:'开启',turnOff:'关闭',notPaired:'未配对',signIn:'登录 Tailscale',signInD:'此设备尚未绑定 Tailscale 账户。在登录之前，控制台只能通过局域网地址访问。',openLink:'打开登录页面',getLink:'获取登录链接',account:'账户',tailnet:'Tailnet',dnsName:'名称',pair:'配对到其他账户',pairQ:'配对到其他账户？',pairD:'设备将立即退出当前 tailnet，本页面会断开——请通过下方局域网地址继续，然后用新账户登录。',pairGo:'退出并配对',localAddr:'局域网地址',localNote:'你正在通过局域网地址访问，绑定账户后此方式将失效。',viaUp:'经由',save:'保存',scan:'扫码连接',ssid:'网络名称',newPsk:'新 Wi-Fi 密码（8–63 个字符）',newPin:'新 PIN（4–8 位数字）',network:'网络',controls:'控制',messages:'短信',usbdrive:'虚拟 U 盘',leds:'指示灯',system:'系统',storage:'存储',probes:'服务可用性检测',log:'日志',
+ foot:'仅可通过 Tailscale 访问 · 方向键移动，Esc 关闭',updated:'更新于',offline:'已断开',
+ via:'上网方式',none:'无网络',noSim:'未插 <em>SIM</em> 卡',searching:'正在搜索信号',ready:'调制解调器就绪',up:'运行',ramFree:'MB 可用内存',noIp:'无 IP',
+ c4g:'4G',cInternet:'互联网',cTs:'Tailscale',cSys:'系统',cLoc:'位置',tsSub:'控制台与 SSH',load:'负载',noFix:'未定位',used:'使用',sats:'颗卫星',
+ publicIp:'公网 IP',latency:'到 1.1.1.1 的延迟',wifi:'Wi-Fi',usb:'USB 主机',hotspotOn:'正在发射热点',wifiClient:'已连接 Wi-Fi',signal:'信号',
+ usbNone:'未连接电脑',usbHost:'已连接电脑',usbAvail:'电脑正在共享网络',usbInUse:'正在使用电脑的网络',notConnected:'未连接',
+ reconnect:'重连 4G',wifiPw:'Wi-Fi 密码',hotspot:'热点',kbd:'USB 键盘',on:'已开启',off:'关闭',locate:'查找设备',blink10:'闪烁 10 秒',check:'检测',probesNow:'立即检测',
+ sshPw:'SSH 密码',smsPin:'短信 PIN',remote:'远程控制',reboot:'重启',stick:'设备',sendSms:'发送短信',viaSim:'通过设备中的 SIM 卡',
+ inMsg:'收到',outMsg:'已发送',failMsg:'发送失败',noSms:'暂无短信。',free:'可用',attached:'已挂载',upload:'上传镜像',mkfat:'空白 FAT 盘',create:'创建',
+ eject:'弹出',ejectSub:'从电脑断开',red:'红',green:'绿',blue:'蓝',findAll:'三灯同闪',images:'镜像',emmc:'eMMC',noData:'暂无数据',
+ lm:{auto:'自动',on:'常亮',off:'关闭',blink:'快闪',slow:'慢闪',heartbeat:'心跳'},
+ disk:{system:'系统 (/)',boot:'引导',images:'镜像存储'},
+ close:'关闭',sReconnect:'断开并重新建立 4G 数据连接。',sMode:'Home：通过 USB 为电脑共享 4G，并作为出口节点。Travel：发射自己的 Wi-Fi 热点（需要 4G 或 USB 网络共享）。',
+ sGps:'调制解调器的 GPS 需要看到天空——请把设备放在窗边或户外。Telegram：/where',status:'状态',locating:'定位中',sat:'卫星',
+ sPsk:'设备热点（Travel 模式）。',sPin:'向设备 SIM 号码发送：<code>&lt;PIN&gt; status | where | wifi on|off | mode home|travel | lte | ts | reboot</code>。每小时错误 5 次将锁定。',
+ sReboot:'重启？',sRebootD:'设备将离线约 40 秒。',sPw:'用户 <code>user</code>（通过 USB 的 SSH）。Tailscale SSH 无需密码。',min10:'至少 10 个字符',change:'修改密码',
+ sSms:'通过设备中的 SIM 卡发送。',phone:'电话号码（+84…）',text:'内容',send:'发送',sending:'发送中…',
+ ledRed:'红灯',ledGreen:'绿灯',ledBlue:'蓝灯',ledRedD:'自动：有网时常亮，断网时快闪。',ledGreenD:'自动：Wi-Fi，随流量闪烁。',ledBlueD:'自动：4G，搜索信号时慢闪。',
+ sKbd:'设备会充当所插电脑的键盘。macOS 首次可能弹出“键盘设置助理”——关闭即可。',kbdOn:'开启键盘',kbdOff:'关闭键盘',
+ kbdText:'要输入的内容（美式键盘，仅 ASCII）',typeIt:'输入',live:'实时输入',liveOn:'已开启 · 按两次 Esc 停止',sUpload:'单个文件最大',speed:'速度取决于 Wi-Fi（约 1 MB/s）。',
+ sMkfat:'挂载到哪台电脑，该电脑就会看到名为 UZ801 的 U 盘。',name:'名称，例如 share.img',sizeMb:'大小（MB）',sImgOn:'已挂载',sImgOff:'作为 U 盘挂载到所插电脑。',reconnects:'挂载/弹出时 USB 会重连约 2 秒。',
+ rw:'读写',ro:'只读',cdrom:'光驱',del:'删除',chooseFile:'请先选择文件',done:'完成',err:'错误',days:'天',hours:'小时',mins:'分钟',minAgo:'分钟前',
+ home:'Home',travel:'Travel'}};
+let lang='en';try{lang=localStorage.getItem('uz.lang')||(navigator.language||'').slice(0,2)}catch(e){}
+if(!L[lang])lang='en';
+const t=k=>L[lang][k]??L.en[k]??k;
+
+const I={signal:'<path d="M5 19v-4M10 19v-8M15 19v-12M20 19V3"/>',
+ wifi:'<path d="M2 9a15 15 0 0 1 20 0M5 12.5a10 10 0 0 1 14 0M8.5 16a5 5 0 0 1 7 0"/><circle cx="12" cy="19.5" r="1"/>',
+ net:'<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/>',
+ chip:'<rect x="6" y="6" width="12" height="12" rx="2"/><path d="M9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4"/>',
+ pin:'<path d="M12 21s-7-6.2-7-11a7 7 0 0 1 14 0c0 4.8-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/>',
+ refresh:'<path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/>',plane:'<path d="M2 15l20-7-7 13-3-6-10 0z"/>',
+ key:'<circle cx="8" cy="15" r="4"/><path d="M11 12l9-9M17 6l3 3"/>',
+ bulb:'<path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-4 10.5c.7.7 1 1.5 1 2.5h6c0-1 .3-1.8 1-2.5A6 6 0 0 0 12 3z"/>',
+ kbd:'<rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/>',
+ check:'<path d="M4 12l5 5L20 6"/>',power:'<path d="M12 3v9M6.3 6.3a8 8 0 1 0 11.4 0"/>',up:'<path d="M12 16V4M6 10l6-6 6 6M4 20h16"/>',
+ disk:'<rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="12" cy="12" r="3"/>',msg:'<path d="M4 5h16v11H8l-4 4z"/>',
+ plus:'<path d="M12 5v14M5 12h14"/>',lock:'<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>',
+ send:'<path d="M3 11l18-8-8 18-2-8z"/>',eject:'<path d="M5 15h14L12 6zM5 19h14"/>',
+ finger:'<path d="M12 11v3a8 8 0 0 1-2 5M8 11a4 4 0 0 1 8 0v1a12 12 0 0 1-1 5M5 13v-2a7 7 0 0 1 12-5M19 11v1a15 15 0 0 1-.5 4M12 15a17 17 0 0 1-3.5 6"/>'};
+const svg=(n,sw=2)=>`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round">${I[n]}</svg>`;
+const G={blue:'linear-gradient(135deg,#0a84ff,#5e5ce6)',green:'linear-gradient(135deg,#30d158,#0fb5ae)',teal:'linear-gradient(135deg,#64d2ff,#0a84ff)',
+ orange:'linear-gradient(135deg,#ff9f0a,#ff375f)',purple:'linear-gradient(135deg,#bf5af2,#5e5ce6)',gray:'linear-gradient(135deg,#48484a,#1c1c1e)',
+ pink:'linear-gradient(135deg,#ff375f,#bf5af2)',yellow:'linear-gradient(135deg,#ffd60a,#ff9f0a)',red:'linear-gradient(135deg,#ff453a,#b0122b)'};
+let S=null;
+
+function toast(m){const e=$('toast');e.textContent=m;e.classList.add('show');clearTimeout(e._h);e._h=setTimeout(()=>e.classList.remove('show'),4500)}
+async function post(a,b){const r=await fetch('/api/'+a,{method:'POST',headers:{'Content-Type':'application/json','X-UZ':'1'},body:JSON.stringify(b||{})});if(r.status===401&&!a.startsWith('pk-login')&&a!=='ts-login'&&a!=='qr')setTimeout(load,0);return r.json()}
+async function act(a,b){try{const r=await post(a,b);toast(r.error||r.out||t('done'));setTimeout(load,800);return r}catch(e){toast(t('err')+': '+e)}}
+const dur=s=>{s=+s;const d=Math.floor(s/86400),h=Math.floor(s%86400/3600),m=Math.floor(s%3600/60);return(d?d+t('days')+' ':'')+h+t('hours')+' '+m+t('mins')};
+const gb=m=>m>=1024?(m/1024).toFixed(1)+' GB':m+' MB';
+function set(id,html){const el=$(id);if(el._h!==html){el._h=html;el.innerHTML=html}}
+function applyStatic(){document.documentElement.lang=lang==='zh'?'zh-Hans':lang;document.querySelectorAll('[data-t]').forEach(e=>e.textContent=t(e.dataset.t));
+ document.querySelectorAll('[data-lang]').forEach(b=>b.classList.toggle('on',b.dataset.lang===lang))}
+function usbState(u){if(!u||!u.link)return['',t('usbNone')];if(u.sharing==='in-use')return['ok',t('usbInUse')];if(u.sharing==='available')return['ok',t('usbAvail')];return[u.host?'warn':'',u.host?t('usbHost'):t('usbNone')]}
+
+function bars(r){const p=+r.rsrp;return !r.rsrp?0:p>-85?4:p>-95?3:p>-105?2:1}
+function render(){
+ const s=S,r=s.radio||{},n=s.net||{},online=!!s.uplink;
+ document.body.classList.toggle('offline',!online);
+ $('upd').textContent=t('updated')+' '+new Date().toLocaleTimeString(lang==='zh'?'zh-CN':lang,{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+ document.querySelectorAll('[data-mode]').forEach(b=>b.classList.toggle('on',b.dataset.mode===s.mode));
+ const up={wwan0:'4G',wlan0:'Wi-Fi',usb0:'USB'}[s.uplink]||t('none');
+ $('eyebrow').textContent=`${s.host} · ${t(s.mode)} · ${t('via')} ${up}`;
+ const reg=r.reg==='registered';
+ set('title',reg?`<em>${esc(r.operator||'4G')}</em>`:r.reg==='no SIM'?t('noSim'):esc(r.operator||t('searching')));
+ $('lead').textContent=reg?`${(r.net||'LTE').toUpperCase()} · RSRP ${r.rsrp||'—'} dBm · ${s.wan_ip||t('noIp')}`:`${t('up')} ${dur(s.uptime)} · ${s.mem_avail_mb} ${t('ramFree')} · ${s.temp_c??'—'} °C`;
+ const nb=bars(r);document.querySelectorAll('#bars i').forEach((b,i)=>b.classList.toggle('on',i<nb));
+
+ const g=s.gps||{},tsOk=!!s.ts_ip,[us,ut]=usbState(n.usb);
+ const wifiLine=n.ssid?(n.wifi_mode==='ap'?`${t('hotspotOn')}: ${esc(n.ssid)}`:`${esc(n.ssid)}${n.wifi_signal?' · '+t('signal')+' '+n.wifi_signal+'%':''}`):'';
+ set('cards',[
+  card('blue','signal',t('c4g'),reg?esc(r.operator||'LTE'):r.reg==='no SIM'?t('noSim').replace(/<\/?em>/g,''):t('searching'),reg?`↓ ${s.rx_mb} MB · ↑ ${s.tx_mb} MB`:([r.net,r.plmn].filter(x=>x&&x!=='--').map(esc).join(' · ')||t('ready')),reg?'ok':r.reg==='no SIM'?'warn':'bad','lte'),
+  card('green','wifi',t('cInternet'),up,wifiLine||(s.uplink==='usb0'?t('usbInUse'):''),online?'ok':'bad','mode'),
+  card('gray','net',t('cTs'),!s.paired?t('notPaired'):tsOk?esc(s.ts_ip):'Offline',!s.paired?t('signIn'):esc((s.ts||{}).login||t('tsSub'))+(s.exit_node&&s.exit_node.advertised?' · '+t('exitNode'):''),!s.paired?'warn':tsOk?'ok':'bad','ts'),
+  card('orange','chip',t('cSys'),`${s.temp_c??'—'} °C`,`${s.mem_avail_mb}/${s.mem_total_mb} MB · ${t('load')} ${esc((s.load||'').split(' ')[0])}`,s.temp_c>70?'warn':'ok','sys'),
+  card('teal','pin',t('cLoc'),g.lat!=null?`${g.lat.toFixed(4)}, ${g.lon.toFixed(4)}`:t('noFix'),`${g.sats_used??0} ${t('used')} / ${g.sats_in_view??0} ${t('sats')}`,g.fix?'ok':g.lat!=null?'warn':'',g.lat!=null?'map':'gps'),
+ ].join(''));
+
+ const urls=(s.local_urls||[]).map(u=>`<code style="user-select:all">${esc(u)}</code>`).join(' · ');
+ set('banner',!s.paired?`<div class="panel" style="margin:0 0 20px;display:flex;gap:22px;align-items:center;flex-wrap:wrap;background:linear-gradient(135deg,#ff9f0a26,#ff375f1f)">
+   <div style="flex:1;min-width:240px"><h3 style="color:var(--orange)">${t('notPaired')}</h3><div style="font-size:22px;font-weight:800;letter-spacing:-.02em">${t('signIn')}</div><p style="color:var(--dim);margin:6px 0 0">${t('signInD')}</p>
+   <p style="color:var(--faint);font-size:14px;margin:8px 0 0">${t('localAddr')}: ${urls||'—'}</p></div>
+   <button class="btn primary" data-focus data-act="tslogin">${s.ts&&s.ts.auth_url?t('openLink'):t('getLink')}</button></div>`:'');
+ const lat=n.latency_ms,lc=lat==null?'bad':lat<60?'ok':lat<150?'warn':'bad';
+ $('netsub').textContent=n.colo?`Cloudflare ${n.colo}`:'';
+ set('net',[
+  stat(t('publicIp'),n.public_ip?`${esc(n.public_ip)}${n.country?`<small>${esc(n.country)}</small>`:''}`:'—'),
+  stat(t('latency'),`<span class="dot ${lc}"></span>${lat==null?'—':lat+' ms'}`),
+  stat(t('wifi'),n.ssid?`<span class="dot ok"></span>${esc(n.ssid)}${n.wifi_mode==='ap'?`<small>${t('hotspot')}</small>`:n.wifi_signal?`<small>${n.wifi_signal}%</small>`:''}`:`<span class="dot"></span>${t('notConnected')}`),
+  stat(t('usb'),`<span class="dot ${us}"></span>${ut}`),
+ ].join(''));
+
+ set('controls',[
+  app('blue','refresh',t('reconnect'),'','lte'),app('green','key',t('wifiPw'),t('hotspot'),'psk'),
+  app('purple','kbd',t('kbd'),s.hid?t('on'):t('off'),'kbd',s.hid?'ON':''),app('yellow','bulb',t('locate'),t('blink10'),'locate'),
+  app('teal','check',t('check'),t('probesNow'),'probe'),app('pink','lock',t('sshPw'),'user','passwd'),app('gray','msg',t('smsPin'),t('remote'),'pin'),app('teal','finger',t('passkeys'),s.passkeys&&s.passkeys.count?t('pkOn'):t('pkSub'),'pk',s.passkeys&&s.passkeys.count?String(s.passkeys.count):''),
+  `<button class="tile app danger" data-focus data-act="reboot"><div class="icon">${svg('power',2.4)}</div><div class="name">${t('reboot')}</div><div class="sub">${t('stick')}</div></button>`,
+ ].join(''));
+
+ const sms=s.sms||[];$('smscount').textContent=sms.length?sms.length:'';
+ set('sms',`<div class="list">
+  <button class="tile item" data-focus data-act="compose" style="grid-template-columns:44px 1fr"><div class="ic" style="background:${G.blue}">${svg('send')}</div><div><b>${t('sendSms')}</b><small>${t('viaSim')}</small></div></button>
+  ${sms.slice(0,8).map(m=>`<div class="item"><div class="ic">${svg(m.dir==='in'?'msg':m.dir==='out'?'send':'power')}</div><div><b>${esc(m.peer)}</b><small>${m.dir==='in'?t('inMsg'):m.dir==='out'?t('outMsg'):t('failMsg')} · ${esc(m.ts)}</small><p>${esc(m.text)}</p></div><span></span></div>`).join('')||`<div class="empty">${t('noSms')}</div>`}
+ </div>`);
+
+ const st=s.storage||{images:[]},at=st.attached;
+ $('stfree').textContent=`${t('free')} ${gb(st.total_free_mb??st.free_mb)}${at?' · '+t('attached')+' '+at.name:''}`;
+ set('images',[
+  ...st.images.map(i=>{const on=at&&at.name===i.name;return `<button class="tile app" data-focus data-act="img" data-name="${esc(i.name)}"><div class="icon" style="--g:${on?G.green:G.gray}">${svg('disk')}${on?`<span class="badge">${esc(at.mode.toUpperCase())}</span>`:''}</div><div class="name">${esc(i.name)}</div><div class="sub">${i.mb} MB</div></button>`}),
+  app('blue','up',t('upload'),'.img / .iso','upload'),app('gray','plus',t('mkfat'),t('create'),'mkfat'),
+  ...(at?[app('orange','eject',t('eject'),t('ejectSub'),'eject')]:[]),
+ ].join(''));
+
+ const LG={red:G.red,green:G.green,blue:G.blue};
+ set('leds',Object.entries(s.leds||{}).map(([k,v])=>`<button class="tile app" data-focus data-act="led" data-led="${k}"><div class="icon" style="--g:${v.on==='1'||v.trigger!=='none'?LG[k]:G.gray}">${svg('bulb')}</div><div class="name">${t(k)}</div><div class="sub">${t('lm')[v.mode]||esc(v.mode)}</div></button>`).join('')+app('yellow','bulb',t('locate'),t('findAll'),'locate'));
+
+ const dk=s.disk||{parts:[]};
+ set('disk',dk.parts.map(p=>{const used=p.total_mb-p.free_mb,pc=Math.round(100*used/Math.max(1,p.total_mb));return `<div style="margin-bottom:16px"><div style="display:flex;justify-content:space-between;gap:12px"><b>${esc(t('disk')[p.label]||p.label)}</b><span style="color:var(--dim)">${gb(p.free_mb)} ${t('free').toLowerCase()} / ${gb(p.total_mb)}</span></div><div class="meter"><i style="width:${pc}%;background:${pc>90?'var(--red)':pc>75?'var(--orange)':'var(--text)'}"></i></div></div>`}).join('')+`<div style="color:var(--faint);font-size:14px">${t('images')} ${gb(dk.images_mb)} · ${t('emmc')} ${gb(dk.emmc_mb)}</div>`);
+ const P=s.probe||{},pr=Object.entries(P).filter(([k])=>!k.startsWith('_')),pv={wwan0:'4G',wlan0:'Wi-Fi',usb0:'USB'}[P._via]||P._via;
+ $('probevia').textContent=pv?`· ${t('viaUp')} ${pv}`:'';
+ set('probe',pr.length?`<div style="display:grid;grid-template-columns:auto 1fr auto;gap:10px 16px;align-items:center">${pr.map(([k,v])=>{const o=typeof v==='object'?v:{ok:v};const ms=o.ms==null?'—':o.ms+' ms';const c=!o.ok?'bad':o.ms!=null&&o.ms>1000?'warn':'ok';
+  return `<span><span class="dot ${c}"></span>${o.ok?'UP':'DOWN'}</span><span style="overflow-wrap:anywhere">${esc(k.replace(/^https?:\/\//,'').replace(/^ping:/,'ping '))}</span><span style="font-variant-numeric:tabular-nums;font-weight:700;text-align:right">${ms}</span>`}).join('')}</div>`:`<div style="color:var(--faint)">${t('noData')}</div>`);
+ $('log').textContent=s.log||'';
+}
+function stat(l,v){return `<div class="stat"><div class="l">${l}</div><div class="n">${v}</div></div>`}
+function card(g,ic,k,v,sub,st,a){return `<button class="tile card" data-focus data-act="${a}" style="--g:${G[g]}"><div class="k">${svg(ic)}${k}</div><div><div class="v${String(v).replace(/<[^>]*>/g,'').length>12?' long':''}"><span class="dot ${st}"></span>${v}</div><div class="s">${sub||'&nbsp;'}</div></div></button>`}
+function app(g,ic,name,sub,a,badge){return `<button class="tile app" data-focus data-act="${a}"><div class="icon" style="--g:${G[g]}">${svg(ic)}${badge?`<span class="badge">${badge}</span>`:''}</div><div class="name">${name}</div><div class="sub">${sub||''}</div></button>`}
+
+/* ---------- passkeys (WebAuthn) ---------- */
+const b2a=s=>{s=s.replace(/-/g,'+').replace(/_/g,'/');s+='='.repeat((4-s.length%4)%4);return Uint8Array.from(atob(s),c=>c.charCodeAt(0)).buffer};
+const a2b=b=>btoa(String.fromCharCode(...new Uint8Array(b))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+async function pkLogin(){
+ if(!window.PublicKeyCredential)return toast(t('pkUnsupported'));
+ try{const o=await post('pk-login-begin');if(o.error)return toast(o.error);
+  const c=await navigator.credentials.get({publicKey:{...o,challenge:b2a(o.challenge),allowCredentials:o.allowCredentials.map(x=>({...x,id:b2a(x.id)}))}});
+  const r=await post('pk-login-finish',{id:c.id,clientDataJSON:a2b(c.response.clientDataJSON),authenticatorData:a2b(c.response.authenticatorData),signature:a2b(c.response.signature),userHandle:c.response.userHandle?a2b(c.response.userHandle):null});
+  toast(r.error||r.out);if(!r.error)load()}catch(e){toast(e.name==='NotAllowedError'?t('close'):String(e.message||e))}}
+async function pkCreate(name){
+ if(!window.PublicKeyCredential)return toast(t('pkUnsupported'));
+ try{const o=await post('pk-reg-begin');if(o.error)return toast(o.error);
+  const c=await navigator.credentials.create({publicKey:{...o,challenge:b2a(o.challenge),user:{...o.user,id:b2a(o.user.id)},excludeCredentials:o.excludeCredentials.map(x=>({...x,id:b2a(x.id)}))}});
+  const r=await post('pk-reg-finish',{name,clientDataJSON:a2b(c.response.clientDataJSON),attestationObject:a2b(c.response.attestationObject)});
+  toast(r.error||r.out);if(!r.error){closeSheet();await load();A.pk()}}catch(e){toast(e.name==='NotAllowedError'||e.name==='InvalidStateError'?String(e.message||e.name):String(e.message||e))}}
+function showLock(x){
+ $('app').hidden=true;$('modeseg').hidden=true;$('lock').hidden=false;$('upd').textContent='';
+ const ts=x.locked==='tailscale';
+ set('lock',`<div style="text-align:center;max-width:620px;animation:enter .55s var(--ease) both">
+  <div style="width:96px;height:96px;margin:0 auto 26px;border-radius:26px;display:grid;place-items:center;background:${G.teal};box-shadow:0 20px 40px #0008">${svg('finger').replace('<svg','<svg style="width:48px;height:48px;color:#fff"')}</div>
+  <p class="eyebrow">${esc(x.host||'UZ801')}</p><h1>${t('locked')}</h1>
+  <p class="lead" style="margin:14px auto 30px">${ts?t('lockedTs'):t('lockedD')}</p>
+  ${ts?(x.paired?'':`<button class="btn" data-focus data-act="tslogin">${t('signIn')}</button>`):`<button class="btn primary" data-focus id="pklogin">${t('pkSignIn')}</button>`}</div>`);
+ if(!ts)setTimeout(()=>$('pklogin')?.focus(),50)}
+function hideLock(){$('lock').hidden=true;$('app').hidden=false;$('modeseg').hidden=false}
+
+/* ---------- sheets ---------- */
+const sheet=$('sheet'),cardEl=$('card');let lastFocus=null;
+function openSheet(g,ic,title,desc,body){lastFocus=document.activeElement;cardEl.innerHTML=`<div class="sicon" style="--g:${G[g]}">${svg(ic)}</div><div><h2>${title}</h2>${desc?`<p class="desc">${desc}</p>`:''}${body}</div>`;sheet.hidden=false;setTimeout(()=>(cardEl.querySelector('input,textarea,[data-focus]')||cardEl).focus(),60)}
+function closeSheet(){sheet.hidden=true;cardEl.innerHTML='';lastFocus?.focus?.()}
+sheet.addEventListener('click',e=>{if(e.target.closest('[data-close]'))closeSheet()});
+const closeBtn=()=>`<button class="btn" data-focus data-close>${t('close')}</button>`;
+const A={
+ lte:()=>openSheet('blue','refresh',t('reconnect'),t('sReconnect'),`<div class="actions"><button class="btn primary" data-focus data-run="lte-restart">${t('reconnect')}</button>${closeBtn()}</div>`),
+ mode:()=>openSheet('green','plane','Home / Travel',t('sMode'),`<div class="actions">${['home','travel'].map(m=>`<button class="btn ${S.mode===m?'primary':''}" data-focus data-run="mode" data-k="mode" data-v="${m}">${t(m)}</button>`).join('')}${closeBtn()}</div>`),
+ ts:()=>{const x=S.ts||{};if(!S.paired)return A.tslogin();
+  openSheet('gray','net','Tailscale',`IP ${esc(S.ts_ip||'—')}`,`<div class="kv"><span>${t('account')}</span><span>${esc(x.login||'—')}</span><span>${t('tailnet')}</span><span>${esc(x.tailnet||'—')}</span><span>${t('dnsName')}</span><span style="overflow-wrap:anywhere">${esc(x.dns||'—')}</span></div>
+   <div class="stat" style="margin-top:18px;display:flex;align-items:center;gap:16px;flex-wrap:wrap"><div style="flex:1;min-width:200px"><div class="l">${t('exitNode')}</div>
+    <div class="n"><span class="dot ${S.exit_node?.advertised?(S.exit_node.approved?'ok':'warn'):''}"></span>${S.exit_node?.advertised?t('exitOn'):t('exitOff')}${S.exit_node?.advertised?`<small>${S.exit_node.approved?t('exitApproved'):t('exitPending')}</small>`:''}</div>
+    <p style="color:var(--faint);font-size:13px;margin:6px 0 0">${t('exitD')}</p></div>
+    <button class="btn ${S.exit_node?.advertised?'':'primary'}" data-focus data-run="exit-node" data-k="on" data-v="${S.exit_node?.advertised?'':'1'}">${S.exit_node?.advertised?t('turnOff'):t('turnOn')}</button></div>
+   <pre>${esc(S.tailscale||'')}</pre><div class="actions"><button class="btn red" data-focus data-act="pairq">${t('pair')}</button>${closeBtn()}</div>`)},
+ pairq:()=>openSheet('red','net',t('pairQ'),t('pairD'),`<div class="stat"><div class="l">${t('localAddr')}</div><div class="n" style="font-size:18px">${(S.local_urls||[]).map(u=>`<div style="user-select:all">${esc(u)}</div>`).join('')||'—'}</div></div>
+   <div class="actions"><button class="btn red" data-focus data-run="ts-pair">${t('pairGo')}</button>${closeBtn()}</div>`),
+ tslogin:async()=>{toast('…');const r=await post('ts-login');if(!r.url){toast(r.error||r.out);return}
+  const q=await post('qr',{text:r.url});
+  openSheet('gray','net',t('signIn'),t('signInD'),`<div style="display:flex;gap:22px;align-items:center;flex-wrap:wrap">${q.qr?`<div style="background:#fff;border-radius:22px;padding:10px;line-height:0">${q.qr.replace('<svg','<svg width="170" height="170"')}</div>`:''}
+   <div style="flex:1;min-width:200px"><a class="btn primary" data-focus href="${esc(r.url)}" target="_blank" rel="noopener" style="text-decoration:none">${t('openLink')}</a><p style="color:var(--faint);font-size:13px;margin-top:12px;overflow-wrap:anywhere">${esc(r.url)}</p></div></div><div class="actions">${closeBtn()}</div>`)},
+ sys:()=>openSheet('orange','chip',t('cSys'),`${esc(S.host)} · ${t('up')} ${dur(S.uptime)}`,`<div class="kv"><span>°C</span><span>${S.temp_c??'—'}</span><span>RAM</span><span>${S.mem_avail_mb} / ${S.mem_total_mb} MB</span><span>${t('load')}</span><span>${esc(S.load)}</span><span>Services</span><span>${Object.entries(S.services||{}).map(([k,v])=>`<span class="dot ${v==='active'?'ok':v==='inactive'?'':'bad'}"></span>${esc(k)}`).join('<br>')}</span></div><div class="actions">${closeBtn()}</div>`),
+ gps:()=>openSheet('teal','pin',t('cLoc'),t('sGps'),`<div class="kv"><span>${t('status')}</span><span>${S.gps?.fix?t('locating'):t('noFix')}</span><span>${t('sat')}</span><span>${S.gps?.sats_used??0} ${t('used')} / ${S.gps?.sats_in_view??0}</span></div><div class="actions">${closeBtn()}</div>`),
+ map:()=>{const g=S.gps;window.open(`https://www.openstreetmap.org/?mlat=${g.lat}&mlon=${g.lon}#map=17/${g.lat}/${g.lon}`,'_blank','noopener')},
+ psk:async()=>{const r=await post('hotspot-psk');openSheet('green','key',t('wifiPw'),t('sPsk'),
+  `<div style="display:flex;gap:22px;align-items:center;flex-wrap:wrap">${r.qr?`<div style="background:#fff;border-radius:22px;padding:10px;width:190px;line-height:0">${r.qr.replace('<svg','<svg width="170" height="170"')}<div style="text-align:center;color:#000;font-size:12px;font-weight:700;line-height:1.4;padding-bottom:2px">${t('scan')}</div></div>`:''}
+   <div style="flex:1;min-width:200px"><div class="stat"><div class="l">${t('ssid')}</div><div class="n">${esc(r.ssid||'—')}</div></div><div class="big-secret" style="margin-top:12px;font-size:clamp(20px,3vw,30px)">${esc(r.out||r.error)}</div></div></div>
+   <form id="pskf" autocomplete="off" style="margin-top:20px"><input class="field" id="psk" type="text" placeholder="${t('newPsk')}" minlength="8" maxlength="63" autocomplete="off" spellcheck="false"><div class="actions" style="margin-top:6px"><button class="btn primary" data-focus type="submit">${t('save')}</button>${closeBtn()}</div></form>`)},
+ pin:async()=>{const r=await post('sms-pin');openSheet('gray','msg',t('smsPin'),t('sPin'),
+  `<div class="big-secret">${esc((r.out||r.error).replace('PIN: ',''))}</div>
+   <form id="pinf" autocomplete="off" style="margin-top:20px"><input class="field" id="pin" inputmode="numeric" pattern="[0-9]{4,8}" maxlength="8" placeholder="${t('newPin')}" autocomplete="off"><div class="actions" style="margin-top:6px"><button class="btn primary" data-focus type="submit">${t('save')}</button>${closeBtn()}</div></form>`)},
+ pk:async()=>{const r=await post('pk-list');const L2=r.list||[],https=location.protocol==='https:';const d=ts=>ts?new Date(ts*1000).toLocaleDateString(lang==='zh'?'zh-CN':lang):t('never');
+  openSheet('teal','finger',t('passkeys'),(L2.length?t('pkOn'):t('pkNone'))+(https?'':' '+t('pkHttps')),
+  `<div class="list">${L2.map(c=>`<div class="item" style="grid-template-columns:44px 1fr auto"><div class="ic">${svg('finger')}</div><div><b>${esc(c.name)}</b><small>${t('created')} ${d(c.created)} · ${t('lastUsed')} ${d(c.last_used)}</small></div><button class="btn sm red" data-focus data-pkdel="${esc(c.id)}">${t('pkDel')}</button></div>`).join('')}</div>
+   ${https?`<form id="pkf" autocomplete="off" style="margin-top:16px"><input class="field" id="pkn" placeholder="${t('pkName')}" maxlength="40"><div class="actions" style="margin-top:6px"><button class="btn primary" data-focus type="submit">${t('pkCreate')}</button>${L2.length?`<button class="btn" data-focus type="button" id="pkout">${t('signOut')}</button>`:''}${closeBtn()}</div></form>`:`<div class="actions">${closeBtn()}</div>`}
+   <p style="color:var(--faint);font-size:13px;margin-top:14px">${t('pkRecover')}</p>`)},
+ locate:()=>act('led-locate'),probe:()=>act('probe'),eject:()=>act('img-eject'),
+ reboot:()=>openSheet('red','power',t('sReboot'),t('sRebootD'),`<div class="actions"><button class="btn red" data-focus data-run="reboot">${t('reboot')}</button>${closeBtn()}</div>`),
+ passwd:()=>openSheet('pink','lock',t('sshPw'),t('sPw'),`<form id="pwf" autocomplete="off"><input class="field" id="pw" type="password" placeholder="${t('min10')}" autocomplete="new-password"><div class="actions"><button class="btn primary" data-focus type="submit">${t('change')}</button>${closeBtn()}</div></form>`),
+ compose:()=>openSheet('blue','send',t('sendSms'),t('sSms'),`<form id="smsf"><input class="field" id="to" placeholder="${t('phone')}" inputmode="tel" autocomplete="off"><textarea class="field" id="txt" rows="3" placeholder="${t('text')}"></textarea><div class="actions"><button class="btn primary" data-focus type="submit">${t('send')}</button>${closeBtn()}</div></form>`),
+ led:b=>{const k=b.dataset.led,v=S.leds[k],K={red:'Red',green:'Green',blue:'Blue'}[k];
+  openSheet(k,'bulb',t('led'+K),t('led'+K+'D'),`<div class="chips">${Object.entries(t('lm')).map(([m,x])=>`<button class="chip ${v.mode===m?'on':''}" data-focus data-run="led" data-k="mode" data-v="${m}" data-led="${k}">${x}</button>`).join('')}</div><div class="actions">${closeBtn()}</div>`)},
+ kbd:()=>openSheet('purple','kbd',t('kbd'),t('sKbd'),
+  `<div class="actions" style="margin-top:0">${S.hid?`<button class="btn" data-focus data-run="gadget" data-k="fn" data-v="hid-off">${t('kbdOff')}</button>`:`<button class="btn primary" data-focus data-run="gadget" data-k="fn" data-v="hid">${t('kbdOn')}</button>`}</div>
+   <textarea class="field" id="hidtxt" rows="3" placeholder="${t('kbdText')}" style="margin-top:18px"></textarea>
+   <div class="chips"><button class="chip" data-focus id="hidsend" style="background:var(--text);color:#000">${t('typeIt')}</button>${[['enter','Enter'],['tab','Tab'],['escape','Esc'],['backspace','⌫'],['gui+space','⌘ Space'],['gui+tab','⌘ Tab'],['ctrl+alt+delete','Ctrl Alt Del'],['up','↑'],['down','↓'],['left','←'],['right','→']].map(([c,x])=>`<button class="chip" data-focus data-key="${c}">${x}</button>`).join('')}</div>
+   <div class="actions"><button class="btn" data-focus id="live">${t('live')}: ${t('off')}</button>${closeBtn()}</div>`),
+ upload:()=>openSheet('blue','up',t('upload'),`${t('sUpload')} ${gb(S.storage.free_mb)}. ${t('speed')}`,`<input class="field" type="file" id="upf"><div class="progress"><i id="upbar"></i></div><div class="actions"><button class="btn primary" data-focus id="upb">${t('upload')}</button>${closeBtn()}</div>`),
+ mkfat:()=>openSheet('gray','plus',t('mkfat'),t('sMkfat'),`<form id="mkf"><input class="field" id="mkn" placeholder="${t('name')}"><input class="field" id="mks" type="number" min="8" placeholder="${t('sizeMb')}"><div class="actions"><button class="btn primary" data-focus type="submit">${t('create')}</button>${closeBtn()}</div></form>`),
+ img:b=>{const nm=b.dataset.name,at=S.storage.attached,on=at&&at.name===nm;
+  openSheet(on?'green':'gray','disk',esc(nm),(on?`${t('sImgOn')} (${esc(at.mode)}). `:t('sImgOff')+' ')+t('reconnects'),
+  `<div class="actions" style="margin-top:0">${on?`<button class="btn primary" data-focus data-run="img-eject">${t('eject')}</button>`:['rw','ro','cdrom'].map((m,i)=>`<button class="btn ${i?'':'primary'}" data-focus data-run="img-attach" data-name="${esc(nm)}" data-mode="${m}">${t(m)}</button>`).join('')}</div>
+   <div class="actions">${on?'':`<button class="btn red" data-focus data-run="img-delete" data-name="${esc(nm)}">${t('del')}</button>`}${closeBtn()}</div>`)},
+};
+
+document.addEventListener('click',async e=>{
+ const lb=e.target.closest('[data-lang]');if(lb){lang=lb.dataset.lang;try{localStorage.setItem('uz.lang',lang)}catch(_){}document.querySelectorAll('[id]').forEach(el=>{el._h=null});applyStatic();if(S)render();return}
+ const a=e.target.closest('[data-act]');if(a){A[a.dataset.act]?.(a);return}
+ const m=e.target.closest('[data-mode]');if(m){act('mode',{mode:m.dataset.mode});return}
+ const r=e.target.closest('[data-run]');if(r){const b={};if(r.dataset.k)b[r.dataset.k]=r.dataset.v;if(r.dataset.name){b.name=r.dataset.name;b.mode=r.dataset.mode}if(r.dataset.led)b.name=r.dataset.led;
+  r.disabled=true;await act(r.dataset.run,b);closeSheet();return}
+ const k=e.target.closest('[data-key]');if(k){const x=await post('hid-key',{combo:k.dataset.key});if(x.error)toast(x.error);return}
+ if(e.target.id==='hidsend'){const x=await post('hid-text',{text:$('hidtxt').value});toast(x.error||x.out);return}
+ if(e.target.id==='live'){live=!live;e.target.textContent=t('live')+': '+(live?t('liveOn'):t('off'));e.target.classList.toggle('primary',live);return}
+ if(e.target.id==='upb')upload();
+ if(e.target.id==='pklogin')pkLogin();
+ if(e.target.id==='pkout'){const r=await post('pk-logout');toast(r.error||r.out);closeSheet();load()}
+ const pd=e.target.closest('[data-pkdel]');if(pd){const r=await post('pk-delete',{id:pd.dataset.pkdel});toast(r.error||r.out);closeSheet();await load();if(!r.error&&S)A.pk()}
+});
+document.addEventListener('submit',async e=>{e.preventDefault();const f=e.target.id;
+ if(f==='pskf'){const r=await post('hotspot-set',{psk:$('psk').value});toast(r.error||r.out);if(!r.error){closeSheet();A.psk()}}
+ if(f==='pinf'){const r=await post('sms-pin-set',{pin:$('pin').value});toast(r.error||r.out);if(!r.error)closeSheet()}
+ if(f==='pkf'){pkCreate($('pkn').value.trim()||'Passkey');return}
+ if(f==='pwf'){const r=await post('passwd',{pw:$('pw').value});toast(r.error||r.out);if(!r.error)closeSheet()}
+ if(f==='smsf'){toast(t('sending'));const r=await post('sms',{to:$('to').value,text:$('txt').value});toast(r.error||r.out);if(!r.error){closeSheet();load()}}
+ if(f==='mkf'){const r=await post('img-create',{name:$('mkn').value,mb:+$('mks').value});toast(r.error||r.out);if(!r.error){closeSheet();load()}}
+});
+function upload(){const f=$('upf').files[0];if(!f)return toast(t('chooseFile'));
+ const name=f.name.replace(/[^A-Za-z0-9._-]/g,'_').replace(/^[._-]+/,'').slice(0,80)||'image.img';
+ const x=new XMLHttpRequest();x.open('PUT','/api/upload?name='+encodeURIComponent(name));x.setRequestHeader('X-UZ','1');
+ const b=$('upb');b.disabled=true;const t0=Date.now();
+ x.upload.onprogress=e=>{if(e.lengthComputable){$('upbar').style.width=(100*e.loaded/e.total)+'%';b.textContent=Math.round(100*e.loaded/e.total)+'% · '+(e.loaded/1048576/((Date.now()-t0)/1000)).toFixed(1)+' MB/s'}};
+ x.onloadend=()=>{let r={};try{r=JSON.parse(x.responseText)}catch(_){r={error:'upload '+x.status}}toast(r.error||r.out);if(!r.error)closeSheet();else{b.disabled=false;b.textContent=t('upload')}load()};
+ x.send(f)}
+
+let live=false,q=Promise.resolve(),lastEsc=0;
+document.addEventListener('keydown',e=>{
+ if(live&&!sheet.hidden&&!['INPUT','TEXTAREA'].includes(e.target.tagName)){
+  if(e.key==='Escape'){const n=Date.now();if(n-lastEsc<600){live=false;const b=$('live');if(b){b.textContent=t('live')+': '+t('off');b.classList.remove('primary')}return}lastEsc=n}
+  if(['Shift','Control','Alt','Meta'].includes(e.key))return;e.preventDefault();
+  const mods=[e.ctrlKey&&'ctrl',e.altKey&&'alt',e.metaKey&&'gui'].filter(Boolean);const combo=(mods.length?mods.join('+')+'+':'')+(e.key===' '?'space':e.key);
+  q=q.then(()=>post('hid-key',{combo})).then(r=>{if(r.error)toast(r.error)}).catch(()=>{});return}
+ const typing=['INPUT','TEXTAREA'].includes(e.target.tagName);
+ const dir={ArrowLeft:'left',ArrowRight:'right',ArrowUp:'up',ArrowDown:'down'}[e.key];
+ if(dir&&!typing){e.preventDefault();moveFocus(dir)}else if(e.key==='Escape'&&!sheet.hidden)closeSheet();
+});
+
+/* tvOS-style focus engine + parallax */
+function focusables(){const root=sheet.hidden?document:cardEl;return[...root.querySelectorAll('[data-focus]')].filter(el=>!el.disabled&&el.offsetParent!==null)}
+function moveFocus(dir){const items=focusables(),cur=document.activeElement;if(!items.includes(cur)){items[0]?.focus();return}
+ const c=cur.getBoundingClientRect(),cx=c.left+c.width/2,cy=c.top+c.height/2;let best=null,bs=Infinity;
+ for(const el of items){if(el===cur)continue;const r=el.getBoundingClientRect(),dx=r.left+r.width/2-cx,dy=r.top+r.height/2-cy;
+  const along={left:-dx,right:dx,up:-dy,down:dy}[dir];if(along<=4)continue;const across=dir==='left'||dir==='right'?Math.abs(dy):Math.abs(dx);const sc=along+across*2.5;if(sc<bs){bs=sc;best=el}}
+ if(best){best.focus({preventScroll:true});best.scrollIntoView({block:'nearest',behavior:'smooth'})}}
+document.addEventListener('pointermove',e=>{const el=e.target.closest?.('.tile');if(!el)return;const r=el.getBoundingClientRect(),px=(e.clientX-r.left)/r.width,py=(e.clientY-r.top)/r.height;
+ el.style.setProperty('--mx',px*100+'%');el.style.setProperty('--my',py*100+'%');el.style.setProperty('--ry',(px-.5)*8+'deg');el.style.setProperty('--rx',(.5-py)*8+'deg')});
+document.addEventListener('pointerout',e=>{const el=e.target.closest?.('.tile');if(el&&!el.contains(e.relatedTarget)){el.style.setProperty('--rx','0deg');el.style.setProperty('--ry','0deg')}});
+
+async function load(){try{const r=await fetch('/api/status');const j=await r.json();if(r.status===401){S=null;if(!sheet.hidden)closeSheet();return showLock(j)}hideLock();S=j;render()}catch(e){$('upd').textContent=t('offline');document.body.classList.add('offline')}}
+applyStatic();load();setInterval(()=>{if(sheet.hidden&&$('lock').hidden)load()},10000);
+</script>
+</body>
+</html>

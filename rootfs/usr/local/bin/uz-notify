@@ -1,0 +1,21 @@
+#!/usr/bin/env python3
+# uz-notify "text" — send a Telegram message using /etc/uz/telegram.env (TG_TOKEN, TG_CHAT).
+import sys, json, urllib.request, urllib.parse
+def env():
+    d = {}
+    try:
+        for l in open('/etc/uz/telegram.env'):
+            if '=' in l: k, v = l.strip().split('=', 1); d[k] = v
+    except OSError: pass
+    return d
+def send(text, chat=None):
+    e = env(); tok = e.get('TG_TOKEN'); chat = chat or e.get('TG_CHAT')
+    if not tok or not chat: print('telegram not configured', file=sys.stderr); return False
+    data = urllib.parse.urlencode({'chat_id': chat, 'text': text[:4000]}).encode()
+    for _ in range(3):
+        try:
+            urllib.request.urlopen(f'https://api.telegram.org/bot{tok}/sendMessage', data, timeout=20); return True
+        except Exception as ex: err = ex
+    print(f'send failed: {type(err).__name__}', file=sys.stderr); return False
+if __name__ == '__main__':
+    sys.exit(0 if send(' '.join(sys.argv[1:]) or sys.stdin.read()) else 1)

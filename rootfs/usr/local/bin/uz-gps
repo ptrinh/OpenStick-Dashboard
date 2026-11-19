@@ -1,0 +1,42 @@
+#!/usr/bin/env python3
+"""Keep the modem GNSS on (ModemManager) and record fixes to /var/lib/uz/gps.json.
+Works without a SIM; needs sky view (and an antenna) for a fix."""
+import json, os, re, subprocess, time
+OUT = '/var/lib/uz/gps.json'
+def mm(*a, t=40):
+    try: return subprocess.run(['mmcli', '-m', 'any', *a], capture_output=True, text=True, timeout=t).stdout
+    except Exception: return ''
+def kv(text):
+    d = {}
+    for l in text.splitlines():
+        if ':' in l: k, v = l.split(':', 1); d[k.strip()] = v.strip()
+    return d
+def load():
+    try: return json.load(open(OUT))
+    except Exception: return {}
+def inject_xtra():
+    try:
+        subprocess.run(['curl', '-sf', '-m', '30', '-o', '/tmp/xtra.bin', 'http://xtrapath1.izatcloud.net/xtra3grc.bin'], timeout=40, check=True)
+        mm('--location-inject-assistance-data=/tmp/xtra.bin', t=60)
+    except Exception: pass
+last_enable = last_xtra = 0
+while True:
+    now = time.time()
+    if now - last_enable > 300:
+        mm('--location-enable-gps-raw', '--location-enable-gps-nmea'); last_enable = now
+    if now - last_xtra > 86400:
+        inject_xtra(); last_xtra = now
+    raw = mm('--location-get', '-K'); d = kv(raw)
+    nmea = ' '.join(v for k, v in d.items() if 'nmea' in k)
+    sats = 0
+    for m in re.finditer(r'\$G[PNLA]GSV,\d+,1,(\d+)', nmea): sats += int(m[1])
+    lat, lon = d.get('modem.location.gps.latitude', '--'), d.get('modem.location.gps.longitude', '--')
+    s = load(); s.update({'sats_in_view': sats, 'checked': int(now)})
+    gga = re.search(r'\$G[PN]GGA,[^,]*,[^,]*,[^,]*,[^,]*,[^,]*,([0-9]),(\d*)', nmea)
+    s['fix'] = bool(gga and gga[1] != '0' and lat not in ('--', ''))
+    if gga and gga[2]: s['sats_used'] = int(gga[2])
+    if s['fix']:
+        s.update({'lat': float(lat), 'lon': float(lon), 'alt': d.get('modem.location.gps.altitude', ''),
+                  'utc': d.get('modem.location.gps.utc', ''), 'fix_time': int(now)})
+    tmp = OUT + '.tmp'; json.dump(s, open(tmp, 'w')); os.replace(tmp, OUT)
+    time.sleep(30)

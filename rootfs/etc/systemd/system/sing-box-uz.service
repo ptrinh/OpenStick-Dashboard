@@ -1,0 +1,8 @@
+[Unit]
+Description=sing-box VPN for travel mode
+After=uz-lte.service
+ConditionPathExists=/etc/uz/sing-box.json
+[Service]
+ExecStart=/usr/bin/sing-box run -c /etc/uz/sing-box.json
+Restart=on-failure
+RestartSec=10
