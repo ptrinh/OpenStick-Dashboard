@@ -8,7 +8,7 @@ A tvOS-style web dashboard and a set of small services that turn a cheap **MSM89
 
 | | |
 |---|---|
-| **Dashboard** | Apple TV–style UI (ambient light, focus lift, parallax tiles, arrow-key navigation), English / Tiếng Việt / 中文 |
+| **Dashboard** | Apple TV–style UI with Status / Statistics / Settings tabs (ambient light, focus lift, parallax tiles, arrow-key navigation), English / Tiếng Việt / 中文 |
 | **4G** | Operator, signal bars, RSRP/SNR, data usage; reconnect. ModemManager (`mmcli`) on Debian, `qmicli` keeper (`uz-lte`) on pmOS |
 | **Network** | Public IP + country (Cloudflare trace), latency to 1.1.1.1, Wi-Fi SSID and signal, USB host / Internet-sharing detection |
 | **Roles** | `home` (NAT for the USB host, Tailscale exit node) and `travel` (own Wi-Fi hotspot over 4G or the USB host's Internet Sharing; refuses to strand you, auto-reverts after 3 min offline) |
@@ -22,6 +22,7 @@ A tvOS-style web dashboard and a set of small services that turn a cheap **MSM89
 | **System** | Storage bars, RAM, temperature, services, logs; zram swap and storage trimming for 3–4 GB eMMC |
 | **Passkeys** | Optional WebAuthn sign-in: once a passkey exists, the dashboard requires it |
 | **Settings** | Notifications (Telegram + signed webhooks per event), Wi-Fi networks (scan/join/forget with automatic rollback), Cellular (APN, roaming, network mode, SIM PIN), SMS allow-list, uptime check targets + interval, hotspot channel/hidden/clients, System (hostname with Tailscale-name pinning, time zone, apt pin to `trixie`, safe `apt upgrade`, scheduled restart), VPN for Travel (VLESS link / sing-box JSON import), LED event mapping |
+| **Data usage** | 4G traffic per hour/day from ModemManager bearer counters: 24 h / 7 d / 30 d / billing-cycle charts on the Statistics tab, cycle start day, monthly cap with 80 % / 100 % notifications |
 | **USB link** | Address-only by default (the host keeps its own Internet); optional "share Internet with the USB computer" |
 
 ## Security model

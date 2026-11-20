@@ -19,7 +19,7 @@ UZ_ETC overrides /etc/uz (tests)."""
 import hashlib, hmac, json, os, socket, sys, time, urllib.error, urllib.parse, urllib.request
 
 EVENTS = ('sms_received', 'sms_command', 'sms_rejected', 'call_incoming', 'call_missed', 'call_trigger',
-          'uptime_change', 'lte_up', 'test')
+          'uptime_change', 'lte_up', 'data_cap', 'test')
 GENERIC = 'message'          # plain `uz-notify "text"`: not filterable, goes to every enabled channel
 TG_API = 'https://api.telegram.org'
 

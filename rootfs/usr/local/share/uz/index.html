@@ -161,7 +161,12 @@ pre{white-space:pre-wrap;font:13px/1.5 var(--mono);color:var(--dim);background:v
 code{font-family:var(--mono);font-size:.92em;color:var(--dim)}
 .group-title{color:var(--faint);font-size:13px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;margin:22px 0 12px}
 .group-title:first-child{margin-top:0}
-#lock[hidden],main[hidden],.seg[hidden]{display:none!important}
+#lock[hidden],main[hidden],.seg[hidden],[data-tab][hidden]{display:none!important}
+.tabs{margin-left:10px}.tabs button{padding:8px 18px;font-size:15px}
+@media(max-width:720px){.top{flex-wrap:wrap}.tabs{order:9;width:100%;margin:6px 0 0;justify-content:space-between}.tabs button{flex:1;padding:8px 6px}}
+.ubars{width:100%;height:150px;display:block;margin:18px 0 6px}.ubars rect.rx{fill:#64d2ff}.ubars rect.tx{fill:#5e5ce6}.ubars text{fill:var(--faint);font-size:11px}
+.ukpi{display:flex;flex-wrap:wrap;gap:12px 32px;margin-top:14px}.ukpi .l{color:var(--faint);font-size:13px;font-weight:600}.ukpi .n{font-size:26px;font-weight:800}
+.capbar{height:8px;border-radius:99px;background:var(--glass-hi);overflow:hidden;margin-top:14px}.capbar i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,#30d158,#64d2ff)}.capbar i.warn{background:linear-gradient(90deg,#ff9f0a,#ff453a)}
 .netrow{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:14px;margin-top:4px}
 .stat{padding:16px 18px;border-radius:20px;background:var(--glass)}
 .stat .l{color:var(--faint);font-size:13px;font-weight:700;letter-spacing:.04em;text-transform:uppercase}
@@ -185,6 +190,7 @@ code{font-family:var(--mono);font-size:.92em;color:var(--dim)}
 
 <header class="top">
   <div class="brand"><span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round"><path d="M5 19V15M10 19V11M15 19V7M20 19V3"/></svg></span>UZ801</div>
+  <nav class="seg tabs" role="tablist" id="tabseg"><button data-focus data-tab-btn="status" data-t="tabStatus"></button><button data-focus data-tab-btn="stats" data-t="tabStats"></button><button data-focus data-tab-btn="settings" data-t="tabSettings"></button></nav>
   <div class="spacer"></div>
   <span class="clock" id="upd">—</span>
   <div class="seg" role="group" id="modeseg"><button data-focus data-mode="home">Home</button><button data-focus data-mode="travel">Travel</button></div>
@@ -193,6 +199,7 @@ code{font-family:var(--mono);font-size:.92em;color:var(--dim)}
 
 <section id="lock" hidden style="min-height:80vh;display:grid;place-items:center;padding:0 24px"></section>
 <main id="app">
+ <div data-tab="status">
   <section class="hero">
     <div>
       <p class="eyebrow" id="eyebrow">…</p>
@@ -217,17 +224,28 @@ code{font-family:var(--mono);font-size:.92em;color:var(--dim)}
   <div class="shelf-title"><h2>USB</h2><span id="stfree"></span></div>
   <div class="row apps" id="images"></div>
 
+  <details class="log"><summary data-t="log"></summary><pre id="log"></pre></details>
+ </div>
 
-  <div class="shelf-title"><h2 data-t="settings"></h2></div>
-  <div id="settings"></div>
-
+ <div data-tab="stats" hidden>
+  <div class="shelf-title"><h2 data-t="dataUsage"></h2><span id="usesub"></span></div>
+  <div class="panel">
+    <div class="chips" id="userange"><button class="chip" data-focus data-range="24h" data-t="r24h"></button><button class="chip" data-focus data-range="7d" data-t="r7d"></button><button class="chip" data-focus data-range="30d" data-t="r30d"></button><button class="chip" data-focus data-range="month" data-t="rMonth"></button></div>
+    <div id="usage"></div>
+  </div>
+  <div class="shelf-title"><h2 data-t="system"></h2></div>
+  <div class="netrow" id="sysstats"></div>
   <div class="shelf-title"><h2 data-t="status"></h2></div>
   <div class="grid2">
     <div class="panel"><h3 data-t="storage"></h3><div id="disk"></div></div>
     <div class="panel"><h3><span data-t="probes"></span> <span id="probevia" style="text-transform:none;letter-spacing:0;font-weight:600;color:var(--faint)"></span></h3><div id="probe"></div></div>
   </div>
+ </div>
 
-  <details class="log"><summary data-t="log"></summary><pre id="log"></pre></details>
+ <div data-tab="settings" hidden>
+  <div class="shelf-title"><h2 data-t="settings"></h2></div>
+  <div id="settings"></div>
+ </div>
   <p class="foot" data-t="foot"></p>
 </main>
 
@@ -240,7 +258,7 @@ const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&
 
 /* ---------- i18n: English is the main language ---------- */
 const L={
-en:{checking:'Checking…',checkDone:'Checked',checkVia:'via',noTargets:'No targets — add some in Settings → Uptime checks.',again:'Run again',quick:'Quick actions',status:'Status',g_network:'Network',g_messaging:'Messaging',g_device:'Device',g_security:'Security',pskBtn:'Name, password & QR',pinBtn:'SMS PIN',usbLink:'USB link',manual:'Manual mode',settings:'Settings',usbShare:'Share Internet with USB computer',usbShareD:'Off: the computer keeps its own Internet and only talks to the stick over USB. On: it may route through the stick (4G backup).',ssidField:'Network name (1–32 characters)',pskKeep:'New password (8–63 characters, leave empty to keep)',passkeys:'Passkeys',pkSub:'Dashboard sign-in',locked:'Locked',lockedD:'This dashboard is protected with a passkey.',pkSignIn:'Sign in with passkey',lockedTs:'Open this dashboard through your Tailscale address to sign in with a passkey.',pkCreate:'Create passkey',pkName:'Name, e.g. iPhone',pkNone:'No passkeys yet. Once you create one, the dashboard requires it to sign in.',pkOn:'Required to open the dashboard',pkDel:'Remove',signOut:'Sign out',pkHttps:'Passkeys work only on the HTTPS Tailscale address.',pkUnsupported:'This browser does not support passkeys.',created:'created',lastUsed:'last used',never:'never',pkRecover:'Lost every passkey? Run <code>uz-passkey reset</code> over Tailscale SSH or USB.',exitNode:'Exit node',exitOn:'Advertised',exitOff:'Off',exitApproved:'approved by admin',exitPending:'waiting for admin approval in the Tailscale console',exitD:'Lets your other devices send all their Internet traffic through this stick (its 4G / Wi-Fi uplink).',turnOn:'Turn on',turnOff:'Turn off',notPaired:'Not paired',signIn:'Sign in to Tailscale',signInD:'This stick has no Tailscale account. Until one signs in, the dashboard is open on local addresses only.',openLink:'Open sign-in page',getLink:'Get sign-in link',account:'Account',tailnet:'Tailnet',dnsName:'Name',pair:'Pair with another account',pairQ:'Pair with another account?',pairD:'The stick signs out of this tailnet now. This page will disconnect — continue on a local address below, then sign in with the new account.',pairGo:'Sign out & pair',localAddr:'Local addresses',localNote:'You are on a local address. It stops working once an account is paired.',viaUp:'via',save:'Save',scan:'Scan to join',ssid:'Network',newPsk:'New Wi-Fi password (8–63 characters)',newPin:'New PIN (4–8 digits)',network:'Network',controls:'Controls',messages:'Messages',usbdrive:'USB drive',leds:'LEDs',system:'System',storage:'Storage',probes:'Uptime checks',log:'Log',
+en:{tabStatus:'Status',tabStats:'Statistics',tabSettings:'Settings',dataUsage:'4G data usage',r24h:'24 hours',r7d:'7 days',r30d:'30 days',rMonth:'Billing cycle',uDown:'Download',uUp:'Upload',uTotal:'Total',uLeft:'days left',uPrev:'Previous cycle',uCap:'of',uNone:'No 4G traffic recorded yet — usage is counted from when this was installed.',uSince:'Counting since',uPlan:'Data plan',system:'System',sRam:'RAM free',sTemp:'Temperature',sLoad:'Load',sUp:'Uptime',sToday:'Today',sMonth:'This cycle',checking:'Checking…',checkDone:'Checked',checkVia:'via',noTargets:'No targets — add some in Settings → Uptime checks.',again:'Run again',quick:'Quick actions',status:'Status',g_network:'Network',g_messaging:'Messaging',g_device:'Device',g_security:'Security',pskBtn:'Name, password & QR',pinBtn:'SMS PIN',usbLink:'USB link',manual:'Manual mode',settings:'Settings',usbShare:'Share Internet with USB computer',usbShareD:'Off: the computer keeps its own Internet and only talks to the stick over USB. On: it may route through the stick (4G backup).',ssidField:'Network name (1–32 characters)',pskKeep:'New password (8–63 characters, leave empty to keep)',passkeys:'Passkeys',pkSub:'Dashboard sign-in',locked:'Locked',lockedD:'This dashboard is protected with a passkey.',pkSignIn:'Sign in with passkey',lockedTs:'Open this dashboard through your Tailscale address to sign in with a passkey.',pkCreate:'Create passkey',pkName:'Name, e.g. iPhone',pkNone:'No passkeys yet. Once you create one, the dashboard requires it to sign in.',pkOn:'Required to open the dashboard',pkDel:'Remove',signOut:'Sign out',pkHttps:'Passkeys work only on the HTTPS Tailscale address.',pkUnsupported:'This browser does not support passkeys.',created:'created',lastUsed:'last used',never:'never',pkRecover:'Lost every passkey? Run <code>uz-passkey reset</code> over Tailscale SSH or USB.',exitNode:'Exit node',exitOn:'Advertised',exitOff:'Off',exitApproved:'approved by admin',exitPending:'waiting for admin approval in the Tailscale console',exitD:'Lets your other devices send all their Internet traffic through this stick (its 4G / Wi-Fi uplink).',turnOn:'Turn on',turnOff:'Turn off',notPaired:'Not paired',signIn:'Sign in to Tailscale',signInD:'This stick has no Tailscale account. Until one signs in, the dashboard is open on local addresses only.',openLink:'Open sign-in page',getLink:'Get sign-in link',account:'Account',tailnet:'Tailnet',dnsName:'Name',pair:'Pair with another account',pairQ:'Pair with another account?',pairD:'The stick signs out of this tailnet now. This page will disconnect — continue on a local address below, then sign in with the new account.',pairGo:'Sign out & pair',localAddr:'Local addresses',localNote:'You are on a local address. It stops working once an account is paired.',viaUp:'via',save:'Save',scan:'Scan to join',ssid:'Network',newPsk:'New Wi-Fi password (8–63 characters)',newPin:'New PIN (4–8 digits)',network:'Network',controls:'Controls',messages:'Messages',usbdrive:'USB drive',leds:'LEDs',system:'System',storage:'Storage',probes:'Uptime checks',log:'Log',
  foot:'Reachable only over Tailscale · arrow keys to move, Esc to close',updated:'Updated',offline:'Disconnected',
  via:'Internet via',none:'no Internet',noSim:'No <em>SIM</em>',searching:'Searching',simChg:'SIM changed',simChgD:'Restart to read the new SIM',sSimD:'The modem only reads a SIM at power-up. Restart the stick (about 40 s offline) so it uses the SIM now in the slot.',ready:'Modem ready',up:'Up',ramFree:'MB RAM free',noIp:'no IP',
  c4g:'4G',cInternet:'Internet',cTs:'Tailscale',cSys:'System',cLoc:'Location',tsSub:'Dashboard & SSH',load:'load',noFix:'No fix',used:'used',sats:'satellites',
@@ -263,7 +281,7 @@ en:{checking:'Checking…',checkDone:'Checked',checkVia:'via',noTargets:'No targ
  sMkfat:'Any computer it is attached to sees a USB drive named UZ801.',name:'Name, e.g. share.img',sizeMb:'Size (MB)',sImgOn:'Attached',sImgOff:'Attach as a USB drive for the computer the stick is plugged into.',reconnects:'Attach/eject reconnects USB for ~2 s.',
  rw:'Read-write',ro:'Read-only',cdrom:'CD-ROM',del:'Delete',chooseFile:'Choose a file first',done:'Done',err:'Error',days:'d',hours:'h',mins:'m',minAgo:'min ago',
  home:'Home',travel:'Travel'},
-vi:{checking:'Đang kiểm tra…',checkDone:'Đã kiểm tra',checkVia:'qua',noTargets:'Chưa có đích nào — thêm trong Cài đặt → Uptime checks.',again:'Kiểm tra lại',quick:'Thao tác nhanh',status:'Trạng thái',g_network:'Mạng',g_messaging:'Tin nhắn',g_device:'Thiết bị',g_security:'Bảo mật',pskBtn:'Tên, mật khẩu & QR',pinBtn:'PIN SMS',usbLink:'Kết nối USB',manual:'Chế độ thủ công',settings:'Cài đặt',usbShare:'Chia Internet cho máy cắm USB',usbShareD:'Tắt: máy tính vẫn dùng Internet của nó, chỉ nói chuyện với stick qua USB. Bật: máy có thể đi Internet qua stick (dự phòng 4G).',ssidField:'Tên mạng (1–32 ký tự)',pskKeep:'Mật khẩu mới (8–63 ký tự, để trống nếu giữ nguyên)',passkeys:'Passkey',pkSub:'Đăng nhập dashboard',locked:'Đã khoá',lockedD:'Dashboard được bảo vệ bằng passkey.',pkSignIn:'Đăng nhập bằng passkey',lockedTs:'Mở dashboard bằng địa chỉ Tailscale để đăng nhập bằng passkey.',pkCreate:'Tạo passkey',pkName:'Tên, vd iPhone',pkNone:'Chưa có passkey. Tạo xong thì dashboard bắt buộc đăng nhập bằng passkey.',pkOn:'Bắt buộc khi mở dashboard',pkDel:'Xoá',signOut:'Đăng xuất',pkHttps:'Passkey chỉ dùng được trên địa chỉ HTTPS của Tailscale.',pkUnsupported:'Trình duyệt này không hỗ trợ passkey.',created:'tạo',lastUsed:'dùng lần cuối',never:'chưa',pkRecover:'Mất hết passkey? Chạy <code>uz-passkey reset</code> qua Tailscale SSH hoặc cáp USB.',exitNode:'Exit node',exitOn:'Đang bật',exitOff:'Tắt',exitApproved:'admin đã duyệt',exitPending:'chờ admin duyệt trong trang quản trị Tailscale',exitD:'Cho các thiết bị khác đi Internet qua stick này (bằng 4G / Wi-Fi của stick).',turnOn:'Bật',turnOff:'Tắt',notPaired:'Chưa pair',signIn:'Đăng nhập Tailscale',signInD:'Stick chưa có tài khoản Tailscale. Cho tới khi đăng nhập, dashboard chỉ mở trên địa chỉ trong mạng nội bộ.',openLink:'Mở trang đăng nhập',getLink:'Lấy link đăng nhập',account:'Tài khoản',tailnet:'Tailnet',dnsName:'Tên',pair:'Pair sang tài khoản khác',pairQ:'Pair sang tài khoản khác?',pairD:'Stick sẽ đăng xuất khỏi tailnet hiện tại ngay. Trang này sẽ mất kết nối — mở tiếp bằng địa chỉ nội bộ bên dưới rồi đăng nhập tài khoản mới.',pairGo:'Đăng xuất & pair',localAddr:'Địa chỉ nội bộ',localNote:'Bạn đang vào qua địa chỉ nội bộ. Đường này sẽ đóng khi đã pair tài khoản.',viaUp:'qua',save:'Lưu',scan:'Quét để kết nối',ssid:'Tên mạng',newPsk:'Mật khẩu Wi-Fi mới (8–63 ký tự)',newPin:'PIN mới (4–8 chữ số)',network:'Mạng',controls:'Điều khiển',messages:'Tin nhắn',usbdrive:'Ổ USB giả lập',leds:'Đèn LED',system:'Hệ thống',storage:'Bộ nhớ',probes:'Kiểm tra dịch vụ',log:'Log',
+vi:{tabStatus:'Trạng thái',tabStats:'Thống kê',tabSettings:'Cài đặt',dataUsage:'Lưu lượng 4G',r24h:'24 giờ',r7d:'7 ngày',r30d:'30 ngày',rMonth:'Chu kỳ cước',uDown:'Tải xuống',uUp:'Tải lên',uTotal:'Tổng',uLeft:'ngày còn lại',uPrev:'Chu kỳ trước',uCap:'trên',uNone:'Chưa ghi nhận lưu lượng 4G — số liệu được đếm từ lúc cài tính năng này.',uSince:'Bắt đầu đếm từ',uPlan:'Gói cước',system:'Hệ thống',sRam:'RAM trống',sTemp:'Nhiệt độ',sLoad:'Tải CPU',sUp:'Thời gian chạy',sToday:'Hôm nay',sMonth:'Chu kỳ này',checking:'Đang kiểm tra…',checkDone:'Đã kiểm tra',checkVia:'qua',noTargets:'Chưa có đích nào — thêm trong Cài đặt → Uptime checks.',again:'Kiểm tra lại',quick:'Thao tác nhanh',status:'Trạng thái',g_network:'Mạng',g_messaging:'Tin nhắn',g_device:'Thiết bị',g_security:'Bảo mật',pskBtn:'Tên, mật khẩu & QR',pinBtn:'PIN SMS',usbLink:'Kết nối USB',manual:'Chế độ thủ công',settings:'Cài đặt',usbShare:'Chia Internet cho máy cắm USB',usbShareD:'Tắt: máy tính vẫn dùng Internet của nó, chỉ nói chuyện với stick qua USB. Bật: máy có thể đi Internet qua stick (dự phòng 4G).',ssidField:'Tên mạng (1–32 ký tự)',pskKeep:'Mật khẩu mới (8–63 ký tự, để trống nếu giữ nguyên)',passkeys:'Passkey',pkSub:'Đăng nhập dashboard',locked:'Đã khoá',lockedD:'Dashboard được bảo vệ bằng passkey.',pkSignIn:'Đăng nhập bằng passkey',lockedTs:'Mở dashboard bằng địa chỉ Tailscale để đăng nhập bằng passkey.',pkCreate:'Tạo passkey',pkName:'Tên, vd iPhone',pkNone:'Chưa có passkey. Tạo xong thì dashboard bắt buộc đăng nhập bằng passkey.',pkOn:'Bắt buộc khi mở dashboard',pkDel:'Xoá',signOut:'Đăng xuất',pkHttps:'Passkey chỉ dùng được trên địa chỉ HTTPS của Tailscale.',pkUnsupported:'Trình duyệt này không hỗ trợ passkey.',created:'tạo',lastUsed:'dùng lần cuối',never:'chưa',pkRecover:'Mất hết passkey? Chạy <code>uz-passkey reset</code> qua Tailscale SSH hoặc cáp USB.',exitNode:'Exit node',exitOn:'Đang bật',exitOff:'Tắt',exitApproved:'admin đã duyệt',exitPending:'chờ admin duyệt trong trang quản trị Tailscale',exitD:'Cho các thiết bị khác đi Internet qua stick này (bằng 4G / Wi-Fi của stick).',turnOn:'Bật',turnOff:'Tắt',notPaired:'Chưa pair',signIn:'Đăng nhập Tailscale',signInD:'Stick chưa có tài khoản Tailscale. Cho tới khi đăng nhập, dashboard chỉ mở trên địa chỉ trong mạng nội bộ.',openLink:'Mở trang đăng nhập',getLink:'Lấy link đăng nhập',account:'Tài khoản',tailnet:'Tailnet',dnsName:'Tên',pair:'Pair sang tài khoản khác',pairQ:'Pair sang tài khoản khác?',pairD:'Stick sẽ đăng xuất khỏi tailnet hiện tại ngay. Trang này sẽ mất kết nối — mở tiếp bằng địa chỉ nội bộ bên dưới rồi đăng nhập tài khoản mới.',pairGo:'Đăng xuất & pair',localAddr:'Địa chỉ nội bộ',localNote:'Bạn đang vào qua địa chỉ nội bộ. Đường này sẽ đóng khi đã pair tài khoản.',viaUp:'qua',save:'Lưu',scan:'Quét để kết nối',ssid:'Tên mạng',newPsk:'Mật khẩu Wi-Fi mới (8–63 ký tự)',newPin:'PIN mới (4–8 chữ số)',network:'Mạng',controls:'Điều khiển',messages:'Tin nhắn',usbdrive:'Ổ USB giả lập',leds:'Đèn LED',system:'Hệ thống',storage:'Bộ nhớ',probes:'Kiểm tra dịch vụ',log:'Log',
  foot:'Chỉ truy cập được qua Tailscale · phím mũi tên để di chuyển, Esc để đóng',updated:'Cập nhật',offline:'Mất kết nối',
  via:'Internet qua',none:'không có mạng',noSim:'Chưa có <em>SIM</em>',searching:'Đang tìm sóng',simChg:'Đã đổi SIM',simChgD:'Khởi động lại để nhận SIM mới',sSimD:'Modem chỉ đọc SIM lúc khởi động. Khởi động lại stick (mất kết nối khoảng 40 giây) để dùng SIM đang cắm.',ready:'Modem sẵn sàng',up:'Bật',ramFree:'MB RAM trống',noIp:'chưa có IP',
  c4g:'4G',cInternet:'Internet',cTs:'Tailscale',cSys:'Hệ thống',cLoc:'Vị trí',tsSub:'Dashboard & SSH',load:'tải',noFix:'Chưa có fix',used:'dùng',sats:'vệ tinh',
@@ -286,7 +304,7 @@ vi:{checking:'Đang kiểm tra…',checkDone:'Đã kiểm tra',checkVia:'qua',no
  sMkfat:'Gắn vào máy nào thì máy đó thấy ổ USB tên UZ801.',name:'Tên, vd share.img',sizeMb:'Dung lượng (MB)',sImgOn:'Đang gắn',sImgOff:'Gắn làm ổ USB cho máy đang cắm stick.',reconnects:'Gắn/tháo làm USB kết nối lại ~2 giây.',
  rw:'Gắn đọc-ghi',ro:'Chỉ đọc',cdrom:'CD-ROM',del:'Xoá',chooseFile:'Chọn file trước',done:'Xong',err:'Lỗi',days:' ngày',hours:' giờ',mins:' phút',minAgo:'phút trước',
  home:'Home',travel:'Travel'},
-zh:{checking:'检测中…',checkDone:'已检测',checkVia:'经由',noTargets:'没有检测目标——请在 设置 → 服务可用性检测 中添加。',again:'再次检测',quick:'快捷操作',status:'状态',g_network:'网络',g_messaging:'消息',g_device:'设备',g_security:'安全',pskBtn:'名称、密码和二维码',pinBtn:'短信 PIN',usbLink:'USB 连接',manual:'手动模式',settings:'设置',usbShare:'通过 USB 为电脑共享网络',usbShareD:'关闭：电脑继续使用自己的网络，仅通过 USB 与设备通信。开启：电脑可经由本设备上网（4G 备份）。',ssidField:'网络名称（1–32 个字符）',pskKeep:'新密码（8–63 个字符，留空则不变）',passkeys:'通行密钥',pkSub:'控制台登录',locked:'已锁定',lockedD:'此控制台受通行密钥保护。',pkSignIn:'使用通行密钥登录',lockedTs:'请通过 Tailscale 地址打开控制台，以使用通行密钥登录。',pkCreate:'创建通行密钥',pkName:'名称，例如 iPhone',pkNone:'尚无通行密钥。创建后，打开控制台必须使用通行密钥登录。',pkOn:'打开控制台时必须验证',pkDel:'删除',signOut:'退出登录',pkHttps:'通行密钥只能在 Tailscale 的 HTTPS 地址上使用。',pkUnsupported:'此浏览器不支持通行密钥。',created:'创建于',lastUsed:'上次使用',never:'从未',pkRecover:'丢失所有通行密钥？通过 Tailscale SSH 或 USB 运行 <code>uz-passkey reset</code>。',exitNode:'出口节点',exitOn:'已开启',exitOff:'关闭',exitApproved:'管理员已批准',exitPending:'等待管理员在 Tailscale 控制台批准',exitD:'让你的其他设备通过本设备（其 4G / Wi-Fi）访问互联网。',turnOn:'开启',turnOff:'关闭',notPaired:'未配对',signIn:'登录 Tailscale',signInD:'此设备尚未绑定 Tailscale 账户。在登录之前，控制台只能通过局域网地址访问。',openLink:'打开登录页面',getLink:'获取登录链接',account:'账户',tailnet:'Tailnet',dnsName:'名称',pair:'配对到其他账户',pairQ:'配对到其他账户？',pairD:'设备将立即退出当前 tailnet，本页面会断开——请通过下方局域网地址继续，然后用新账户登录。',pairGo:'退出并配对',localAddr:'局域网地址',localNote:'你正在通过局域网地址访问，绑定账户后此方式将失效。',viaUp:'经由',save:'保存',scan:'扫码连接',ssid:'网络名称',newPsk:'新 Wi-Fi 密码（8–63 个字符）',newPin:'新 PIN（4–8 位数字）',network:'网络',controls:'控制',messages:'短信',usbdrive:'虚拟 U 盘',leds:'指示灯',system:'系统',storage:'存储',probes:'服务可用性检测',log:'日志',
+zh:{tabStatus:'状态',tabStats:'统计',tabSettings:'设置',dataUsage:'4G 流量',r24h:'24 小时',r7d:'7 天',r30d:'30 天',rMonth:'计费周期',uDown:'下载',uUp:'上传',uTotal:'合计',uLeft:'天剩余',uPrev:'上个周期',uCap:'/',uNone:'尚未记录 4G 流量——从安装此功能起开始统计。',uSince:'统计开始于',uPlan:'流量套餐',system:'系统',sRam:'可用内存',sTemp:'温度',sLoad:'负载',sUp:'运行时间',sToday:'今天',sMonth:'本周期',checking:'检测中…',checkDone:'已检测',checkVia:'经由',noTargets:'没有检测目标——请在 设置 → 服务可用性检测 中添加。',again:'再次检测',quick:'快捷操作',status:'状态',g_network:'网络',g_messaging:'消息',g_device:'设备',g_security:'安全',pskBtn:'名称、密码和二维码',pinBtn:'短信 PIN',usbLink:'USB 连接',manual:'手动模式',settings:'设置',usbShare:'通过 USB 为电脑共享网络',usbShareD:'关闭：电脑继续使用自己的网络，仅通过 USB 与设备通信。开启：电脑可经由本设备上网（4G 备份）。',ssidField:'网络名称（1–32 个字符）',pskKeep:'新密码（8–63 个字符，留空则不变）',passkeys:'通行密钥',pkSub:'控制台登录',locked:'已锁定',lockedD:'此控制台受通行密钥保护。',pkSignIn:'使用通行密钥登录',lockedTs:'请通过 Tailscale 地址打开控制台，以使用通行密钥登录。',pkCreate:'创建通行密钥',pkName:'名称，例如 iPhone',pkNone:'尚无通行密钥。创建后，打开控制台必须使用通行密钥登录。',pkOn:'打开控制台时必须验证',pkDel:'删除',signOut:'退出登录',pkHttps:'通行密钥只能在 Tailscale 的 HTTPS 地址上使用。',pkUnsupported:'此浏览器不支持通行密钥。',created:'创建于',lastUsed:'上次使用',never:'从未',pkRecover:'丢失所有通行密钥？通过 Tailscale SSH 或 USB 运行 <code>uz-passkey reset</code>。',exitNode:'出口节点',exitOn:'已开启',exitOff:'关闭',exitApproved:'管理员已批准',exitPending:'等待管理员在 Tailscale 控制台批准',exitD:'让你的其他设备通过本设备（其 4G / Wi-Fi）访问互联网。',turnOn:'开启',turnOff:'关闭',notPaired:'未配对',signIn:'登录 Tailscale',signInD:'此设备尚未绑定 Tailscale 账户。在登录之前，控制台只能通过局域网地址访问。',openLink:'打开登录页面',getLink:'获取登录链接',account:'账户',tailnet:'Tailnet',dnsName:'名称',pair:'配对到其他账户',pairQ:'配对到其他账户？',pairD:'设备将立即退出当前 tailnet，本页面会断开——请通过下方局域网地址继续，然后用新账户登录。',pairGo:'退出并配对',localAddr:'局域网地址',localNote:'你正在通过局域网地址访问，绑定账户后此方式将失效。',viaUp:'经由',save:'保存',scan:'扫码连接',ssid:'网络名称',newPsk:'新 Wi-Fi 密码（8–63 个字符）',newPin:'新 PIN（4–8 位数字）',network:'网络',controls:'控制',messages:'短信',usbdrive:'虚拟 U 盘',leds:'指示灯',system:'系统',storage:'存储',probes:'服务可用性检测',log:'日志',
  foot:'仅可通过 Tailscale 访问 · 方向键移动，Esc 关闭',updated:'更新于',offline:'已断开',
  via:'上网方式',none:'无网络',noSim:'未插 <em>SIM</em> 卡',searching:'正在搜索信号',simChg:'SIM 卡已更换',simChgD:'重启以读取新 SIM 卡',sSimD:'调制解调器只在开机时读取 SIM 卡。重启设备（离线约 40 秒）以使用当前插入的 SIM 卡。',ready:'调制解调器就绪',up:'运行',ramFree:'MB 可用内存',noIp:'无 IP',
  c4g:'4G',cInternet:'互联网',cTs:'Tailscale',cSys:'系统',cLoc:'位置',tsSub:'控制台与 SSH',load:'负载',noFix:'未定位',used:'使用',sats:'颗卫星',
@@ -340,6 +358,44 @@ async function act(a,b){try{const r=await post(a,b);toast(r.error||r.out||t('don
 const dur=s=>{s=+s;const d=Math.floor(s/86400),h=Math.floor(s%86400/3600),m=Math.floor(s%3600/60);return(d?d+t('days')+' ':'')+h+t('hours')+' '+m+t('mins')};
 const gb=m=>m>=1024?(m/1024).toFixed(1)+' GB':m+' MB';
 function set(id,html){const el=$(id);if(el._h!==html){el._h=html;el.innerHTML=html}}
+const fmtB=b=>b>=1e9?(b/1e9).toFixed(2)+' GB':b>=1e6?(b/1e6).toFixed(1)+' MB':b>=1e3?Math.round(b/1e3)+' KB':(b|0)+' B';
+let TAB='status',URANGE='month',USAGE=null,usageAt=0;
+try{const h=location.hash.slice(1);TAB=['status','stats','settings'].includes(h)?h:(localStorage.getItem('uz-tab')||'status');URANGE=localStorage.getItem('uz-urange')||'month'}catch(e){}
+function showTab(n,push){if(!['status','stats','settings'].includes(n))n='status';TAB=n;
+ document.querySelectorAll('[data-tab]').forEach(e=>e.hidden=e.dataset.tab!==n);
+ document.querySelectorAll('[data-tab-btn]').forEach(b=>{b.classList.toggle('on',b.dataset.tabBtn===n);b.setAttribute('aria-selected',b.dataset.tabBtn===n)});
+ try{localStorage.setItem('uz-tab',n)}catch(e){}
+ if(push&&location.hash!=='#'+n)history.replaceState(null,'','#'+n);
+ if(n==='stats'&&S)renderStats(true)}
+window.addEventListener('hashchange',()=>showTab(location.hash.slice(1)));
+document.addEventListener('click',e=>{const b=e.target.closest('[data-tab-btn]');if(b){showTab(b.dataset.tabBtn,true);window.scrollTo({top:0})}
+ const r=e.target.closest('[data-range]');if(r){URANGE=r.dataset.range;try{localStorage.setItem('uz-urange',URANGE)}catch(x){}renderStats(true)}});
+function usageChart(u){const P=u.points||[],n=P.length;if(!n)return '';const W=600,H=150,max=Math.max(1,...P.map(p=>p.rx+p.tx)),bw=W/n,gap=Math.min(4,bw*.25);
+ const lab=i=>{const k=P[i].k;return u.range==='24h'?k.slice(11)+':00':k.slice(5).replace('-','/')};
+ const marks=u.range==='24h'?[0,6,12,18,n-1]:[0,Math.floor((n-1)/2),n-1];
+ return `<svg class="ubars" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="${esc(t('dataUsage'))}">${P.map((p,i)=>{const hr=p.rx/max*H,ht=p.tx/max*H,x=i*bw+gap/2,w=Math.max(1,bw-gap);
+  return `<g><title>${esc(lab(i))}: ↓ ${fmtB(p.rx)} · ↑ ${fmtB(p.tx)}</title><rect x="${x}" y="${H-hr}" width="${w}" height="${Math.max(hr,p.rx?1:0)}" rx="2" class="rx"/><rect x="${x}" y="${H-hr-ht}" width="${w}" height="${Math.max(ht,p.tx?1:0)}" rx="2" class="tx"/><rect x="${x}" y="0" width="${w}" height="${H}" fill="transparent"/></g>`}).join('')}
+</svg><div style="display:flex;justify-content:space-between;color:var(--faint);font-size:12px;margin-bottom:4px">${[...new Set(marks)].map(i=>`<span>${esc(lab(i))}</span>`).join('')}</div>`}
+function renderUsage(){document.querySelectorAll('[data-range]').forEach(b=>b.classList.toggle('on',b.dataset.range===URANGE));const u=USAGE;if(!u)return;
+ if(u.error){set('usage',`<p class="s">${esc(u.error)}</p>`);return}
+ const tot=u.rx+u.tx,cap=u.cap_mb*1e6,pc=cap?Math.round(tot/cap*100):0,m=u.range==='month';
+ set('usesub',m?`${esc(u.start)} → ${esc(u.end)} · ${u.days_left} ${t('uLeft')}`:'');
+ set('usage',(!u.since?`<p class="s" style="margin-top:14px">${t('uNone')}</p>`:usageChart(u))+
+  `<div class="ukpi"><div><div class="l">${t('uTotal')}</div><div class="n">${fmtB(tot)}${m&&cap?` <small style="font-size:15px;color:var(--faint)">${t('uCap')} ${fmtB(cap)} · ${pc}%</small>`:''}</div></div>
+   <div><div class="l"><span style="color:#64d2ff">■</span> ${t('uDown')}</div><div class="n">${fmtB(u.rx)}</div></div>
+   <div><div class="l"><span style="color:#5e5ce6">■</span> ${t('uUp')}</div><div class="n">${fmtB(u.tx)}</div></div>
+   ${m&&u.prev_complete?`<div><div class="l">${t('uPrev')}</div><div class="n">${fmtB(u.prev_rx+u.prev_tx)}</div></div>`:''}</div>
+  ${m&&cap?`<div class="capbar"><i class="${pc>=80?'warn':''}" style="width:${Math.min(100,pc)}%"></i></div>`:''}
+  <div class="actions" style="margin-top:16px">${u.since?`<small style="color:var(--faint);align-self:center">${t('uSince')} ${esc(u.since)}</small>`:''}${MODS.some(x=>x.id==='usage')?`<button class="btn sm" data-focus data-mod="usage">${t('uPlan')}</button>`:''}</div>`)}
+async function renderStats(force){if(!S)return;
+ const memPc=S.mem_total_mb?Math.round(100*S.mem_avail_mb/S.mem_total_mb):0,us=(S.settings||{}).usage||{};
+ const tile=(l,n,sub)=>`<div class="panel" style="padding:18px 20px"><div class="l" style="color:var(--faint);font-size:13px;font-weight:600">${l}</div><div style="font-size:24px;font-weight:800;margin-top:4px">${n}</div>${sub?`<div style="color:var(--faint);font-size:13px">${sub}</div>`:''}</div>`;
+ set('sysstats',[us.month_bytes!=null?tile(t('sMonth'),fmtB(us.month_bytes),us.cap_pct!=null?us.cap_pct+'%':''):'',us.day_bytes!=null?tile(t('sToday'),fmtB(us.day_bytes),'4G'):'',
+  tile(t('sRam'),`${S.mem_avail_mb} MB`,`${memPc}% / ${S.mem_total_mb} MB`),tile(t('sTemp'),S.temp_c!=null?Math.round(S.temp_c)+' °C':'—',''),
+  tile(t('sLoad'),esc((S.load||'').split(' ')[0]||'—'),esc(S.load||'')),tile(t('sUp'),dur(S.uptime),'')].join(''));
+ if(TAB!=='stats')return;
+ if(!force&&Date.now()-usageAt<60000){renderUsage();return}
+ usageAt=Date.now();try{USAGE=await post('usage-get',{range:URANGE})}catch(e){USAGE={error:String(e)}}renderUsage()}
 function applyStatic(){document.documentElement.lang=lang==='zh'?'zh-Hans':lang;document.querySelectorAll('[data-t]').forEach(e=>e.textContent=t(e.dataset.t));
  document.querySelectorAll('[data-lang]').forEach(b=>b.classList.toggle('on',b.dataset.lang===lang))}
 function usbState(u){if(!u||!u.link)return['',t('usbNone')];if(u.sharing==='in-use')return['ok',t('usbInUse')];if(u.sharing==='available')return['ok',t('usbAvail')];return[u.host?'warn':'',u.host?t('usbHost'):t('usbNone')]}
@@ -360,7 +416,7 @@ function render(){
  const g=s.gps||{},tsOk=!!s.ts_ip,[us,ut]=usbState(n.usb);
  const wifiLine=n.ssid?(n.wifi_mode==='ap'?`${t('hotspotOn')}: ${esc(n.ssid)}`:`${esc(n.ssid)}${n.wifi_signal?' · '+t('signal')+' '+n.wifi_signal+'%':''}`):'';
  set('cards',[
-  r.sim_restart?card('blue',sigSvg(nb),t('c4g'),t('simChg'),t('simChgD'),'warn','simrestart'):card('blue',sigSvg(nb),t('c4g'),reg?esc(r.operator||'LTE'):r.reg==='no SIM'?t('noSim').replace(/<\/?em>/g,''):t('searching'),reg?`↓ ${r.rx_mb??s.rx_mb} MB · ↑ ${r.tx_mb??s.tx_mb} MB`:([r.net,r.plmn].filter(x=>x&&x!=='--').map(esc).join(' · ')||t('ready')),reg?'ok':r.reg==='no SIM'?'warn':'bad','lte'),
+  r.sim_restart?card('blue',sigSvg(nb),t('c4g'),t('simChg'),t('simChgD'),'warn','simrestart'):card('blue',sigSvg(nb),t('c4g'),reg?esc(r.operator||'LTE'):r.reg==='no SIM'?t('noSim').replace(/<\/?em>/g,''):t('searching'),reg?(s.settings?.usage?.month_bytes!=null?`${t('sMonth')}: ${fmtB(s.settings.usage.month_bytes)}`:`↓ ${r.rx_mb??s.rx_mb} MB · ↑ ${r.tx_mb??s.tx_mb} MB`):([r.net,r.plmn].filter(x=>x&&x!=='--').map(esc).join(' · ')||t('ready')),reg?'ok':r.reg==='no SIM'?'warn':'bad','lte'),
   card('green','wifi',t('cInternet'),up,wifiLine||(s.uplink==='usb0'?t('usbInUse'):''),online?'ok':'bad','mode'),
   card('gray','net',t('cTs'),!s.paired?t('notPaired'):tsOk?esc(s.ts_ip):'Offline',!s.paired?t('signIn'):esc((s.ts||{}).login||t('tsSub'))+(s.exit_node&&s.exit_node.advertised?' · '+t('exitNode'):''),!s.paired?'warn':tsOk?'ok':'bad','ts'),
   card('orange','chip',t('cSys'),`${s.temp_c??'—'} °C`,`${s.mem_avail_mb}/${s.mem_total_mb} MB · ${t('load')} ${esc((s.load||'').split(' ')[0])}`,s.temp_c>70?'warn':'ok','sys'),
@@ -583,7 +639,7 @@ window.UZ={
   <div class="actions" style="margin-top:14px"><button class="btn" data-focus data-core="locate">${t('locate')} · ${t('blink10')}</button></div></div>`},
 };
 const GROUPS=['network','messaging','device','security'];
-const PLACE={wifi:['network',10],cellular:['network',20],hotspot:['network',30],tailscale:['network',40],vpn:['network',50],usblink:['network',60],
+const PLACE={wifi:['network',10],cellular:['network',20],usage:['network',25],hotspot:['network',30],tailscale:['network',40],vpn:['network',50],usblink:['network',60],
  smsallow:['messaging',10],calls:['messaging',15],notify:['messaging',20],leds:['device',10],checks:['device',20],system:['device',30],passkeys:['security',10],sshpw:['security',20]};
 const tt=k=>({en:L.en[k],vi:L.vi[k],zh:L.zh[k]});
 [{id:'tailscale',color:'gray',icon:'net',title:{en:'Tailscale',vi:'Tailscale',zh:'Tailscale'},sub:S=>S.paired?((S.ts||{}).login||'')+(S.exit_node&&S.exit_node.advertised?' · '+t('exitNode'):''):t('notPaired'),open:()=>A.ts()},
@@ -599,8 +655,8 @@ function settingTile(m){const sub=typeof m.sub==='function'?m.sub(S):UZ.tr(m.sub
 document.addEventListener('click',e=>{const c=e.target.closest('[data-core]');if(c&&A[c.dataset.core]){closeSheet();setTimeout(()=>A[c.dataset.core](),0);return}});
 document.addEventListener('click',e=>{const b=e.target.closest('[data-mod]');if(!b)return;const m=MODS.find(x=>x.id===b.dataset.mod);try{m?.open?.(S)}catch(x){toast(String(x))}});
 
-async function load(){try{const r=await fetch('/api/status');const j=await r.json();if(r.status===401){S=null;if(!sheet.hidden)closeSheet();return showLock(j)}hideLock();S=j;render();loadModules();renderSettings()}catch(e){$('upd').textContent=t('offline');document.body.classList.add('offline')}}
-applyStatic();load();setInterval(()=>{if(sheet.hidden&&$('lock').hidden)load()},10000);
+async function load(){try{const r=await fetch('/api/status');const j=await r.json();if(r.status===401){S=null;if(!sheet.hidden)closeSheet();return showLock(j)}hideLock();S=j;render();loadModules();renderSettings();renderStats()}catch(e){$('upd').textContent=t('offline');document.body.classList.add('offline')}}
+applyStatic();showTab(TAB);load();setInterval(()=>{if(sheet.hidden&&$('lock').hidden)load()},10000);
 </script>
 </body>
 </html>
