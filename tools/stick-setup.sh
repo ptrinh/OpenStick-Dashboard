@@ -42,8 +42,10 @@ fi
 systemctl enable uz-sms.service uz-mode.service
 command -v mmcli >/dev/null && systemctl enable --now uz-gps.service
 command -v mmcli >/dev/null && systemctl enable --now uz-calls.service
+command -v mmcli >/dev/null && systemctl enable uz-modem-prefs.service
 systemctl enable --now uz-web.service uz-led.service uz-zram.service
 grep -q '^UZ_USB_SHARE=' /etc/uz/uz.conf || echo 'UZ_USB_SHARE=0' >> /etc/uz/uz.conf
+grep -q '^UZ_NET_MODE=' /etc/uz/uz.conf || echo 'UZ_NET_MODE="allowed: 3g, 4g; preferred: 4g"' >> /etc/uz/uz.conf
 systemctl enable uz-usbnet.service; /usr/local/bin/uz-usbnet || true
 # pick up new code in long-running services
 for u in uz-web uz-sms uz-gps uz-led uz-calls; do systemctl is-active -q $u && systemctl restart $u; done; true

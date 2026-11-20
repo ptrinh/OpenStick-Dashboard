@@ -336,6 +336,10 @@ def cell_mode_set(body, ctx):
     rc, _, err = _run(['mmcli', '-m', 'any', *args], 30)
     if rc != 0:
         return {'error': 'mmcli: ' + _err(err)}
+    try:
+        ctx.set_conf('UZ_NET_MODE', '"' + mode + '"')      # re-applied at boot by uz-modem-prefs
+    except Exception:
+        pass
     _kick(ctx, force=True)
     return {'out': 'network mode set: ' + mode}
 

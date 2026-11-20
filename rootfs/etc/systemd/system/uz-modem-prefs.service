@@ -1,0 +1,11 @@
+[Unit]
+Description=UZ801 re-apply modem network-mode preference (prefer 4G)
+After=ModemManager.service
+Wants=ModemManager.service
+ConditionPathExists=/usr/bin/mmcli
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/uz-modem-prefs
+TimeoutStartSec=180
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,23 @@
+#!/bin/sh
+# uz-modem-prefs — re-apply the network-mode preference at boot: this modem forgets
+# "preferred: 4g" on every power-up and falls back to preferring 3G.
+# UZ_NET_MODE in /etc/uz/uz.conf, as `mmcli` prints it, e.g. "allowed: 3g, 4g; preferred: 4g" (empty = leave as is).
+[ -r /etc/uz/uz.conf ] && . /etc/uz/uz.conf
+M=${UZ_NET_MODE-"allowed: 3g, 4g; preferred: 4g"}
+[ -n "$M" ] || exit 0
+allowed=$(echo "$M" | sed -n 's/^allowed: \([a-z0-9, ]*\);.*/\1/p' | tr -d ' ' | tr ',' '|')
+pref=$(echo "$M" | sed -n 's/.*preferred: \([a-z0-9]*\)$/\1/p')
+[ -n "$allowed" ] || { echo "uz-modem-prefs: bad UZ_NET_MODE: $M" >&2; exit 1; }
+for i in $(seq 1 40); do                     # wait up to ~2 min for ModemManager to expose the modem
+  if mmcli -m any >/dev/null 2>&1; then
+    cur=$(mmcli -m any -K | sed -n 's/^modem.generic.current-modes *: *//p')
+    [ "$cur" = "$M" ] && { echo "uz-modem-prefs: already $M"; exit 0; }
+    if [ -n "$pref" ] && [ "$pref" != none ]; then
+      mmcli -m any --set-allowed-modes="$allowed" --set-preferred-mode="$pref" && { echo "uz-modem-prefs: set $M"; exit 0; }
+    else
+      mmcli -m any --set-allowed-modes="$allowed" && { echo "uz-modem-prefs: set $M"; exit 0; }
+    fi
+  fi
+  sleep 3
+done
+echo "uz-modem-prefs: modem not ready, gave up" >&2; exit 1
