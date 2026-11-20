@@ -11,14 +11,15 @@ HERE=$(cd "$(dirname "$0")" && pwd)
 if command -v apt-get >/dev/null; then
   echo "== Debian packages"
   export DEBIAN_FRONTEND=noninteractive
-  apt-get update -qq
-  apt-get install -y -qq --no-install-recommends python3 python3-cryptography jq curl ca-certificates busybox dosfstools gnupg qrencode >/dev/null
+  APT="apt-get -o DPkg::Lock::Timeout=900"   # wait if an update is already running
+  $APT update -qq
+  $APT install -y -qq --no-install-recommends python3 python3-cryptography jq curl ca-certificates busybox dosfstools gnupg qrencode >/dev/null
   if ! command -v tailscale >/dev/null; then
     echo "== Tailscale (pkgs.tailscale.com)"
     . /etc/os-release
     curl -fsSL "https://pkgs.tailscale.com/stable/debian/${VERSION_CODENAME}.noarmor.gpg" -o /usr/share/keyrings/tailscale-archive-keyring.gpg
     curl -fsSL "https://pkgs.tailscale.com/stable/debian/${VERSION_CODENAME}.tailscale-keyring.list" -o /etc/apt/sources.list.d/tailscale.list
-    apt-get update -qq && apt-get install -y -qq tailscale >/dev/null
+    $APT update -qq && $APT install -y -qq tailscale >/dev/null
   fi
   # NetworkManager runs its own dnsmasq for the hotspot / USB sharing; the system one only gets in the way.
   systemctl disable --now dnsmasq.service >/dev/null 2>&1 || true
