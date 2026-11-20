@@ -2,6 +2,8 @@
 
 A tvOS-style web dashboard and a set of small services that turn a cheap **MSM8916 4G USB stick** (UZ801 and friends) running [OpenStick](https://openstick.org/) Debian or postmarketOS into a remote-managed 4G gateway, SMS gateway, USB keyboard/drive and network probe — reachable only through your **Tailscale** tailnet.
 
+![OpenStick Dashboard — Status tab](docs/dashboard.jpg)
+
 > Tested on a UZ801 (modem firmware `UZ801_V3.3`) running openstick.org v0.0.6 (Debian 13, kernel 6.6). The services also run on postmarketOS (`zhihe-generic`, kernel 6.12) with the `qmicli` backend.
 
 ## Features
