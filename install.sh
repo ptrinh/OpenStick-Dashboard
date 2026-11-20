@@ -29,7 +29,12 @@ echo "== dashboard"
 rm -rf /tmp/uz && mkdir -p /tmp/uz
 cp -r "$HERE/rootfs" "$HERE/tools/stick-setup.sh" /tmp/uz/
 sh /tmp/uz/stick-setup.sh
-IP=$(ip -4 -o addr show 2>/dev/null | awk '$2 ~ /^(wlan0|usb0)$/ {split($4,a,"/"); print a[1]}' | head -3 | tr '\n' ' ')
 echo
-echo "Open the dashboard: $(for i in $IP; do printf 'http://%s  ' "$i"; done)"
-echo "Then use Tailscale → Sign in on the dashboard to pair the stick with your tailnet."
+DNS=$(tailscale status --json 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin).get("Self",{}).get("DNSName","").rstrip("."))' 2>/dev/null || true)
+if [ -n "$DNS" ]; then
+  echo "Open the dashboard: https://$DNS"
+else
+  IP=$(ip -4 -o addr show 2>/dev/null | awk '$2 ~ /^(wlan0|usb0)$/ {split($4,a,"/"); print a[1]}' | head -3 | tr '\n' ' ')
+  echo "Open the dashboard: $(for i in $IP; do printf 'http://%s  ' "$i"; done)"
+  echo "Then open the Tailscale card → Sign in to Tailscale to pair the stick with your tailnet."
+fi
