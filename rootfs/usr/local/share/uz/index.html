@@ -266,7 +266,7 @@ en:{tabStatus:'Status',tabStats:'Statistics',tabSettings:'Settings',dataUsage:'4
  usbNone:'No computer',usbHost:'Computer attached',usbAvail:'Computer is sharing Internet',usbInUse:'Using computer’s Internet',notConnected:'Not connected',
  reconnect:'Reconnect 4G',wifiPw:'Wi-Fi password',hotspot:'Hotspot',kbd:'USB keyboard',on:'On',off:'Off',locate:'Find stick',blink10:'Blink 10 s',check:'Check',probesNow:'Run checks',
  sshPw:'SSH password',smsPin:'SMS PIN',remote:'Remote control',reboot:'Restart',stick:'Stick',sendSms:'Send SMS',viaSim:'Via the SIM in the stick',
- inMsg:'Received',outMsg:'Sent',failMsg:'Failed',noSms:'No messages yet.',free:'Free',attached:'attached',upload:'Upload image',mkfat:'Blank FAT drive',create:'Create',
+ smsAll:'All messages',smsN:'messages',smsFind:'Search number or text',inMsg:'Received',outMsg:'Sent',failMsg:'Failed',noSms:'No messages yet.',free:'Free',attached:'attached',upload:'Upload image',mkfat:'Blank FAT drive',create:'Create',
  eject:'Eject',ejectSub:'Detach from computer',red:'Red',green:'Green',blue:'Blue',findAll:'Blink all 3',images:'Images',emmc:'eMMC',noData:'No data yet',
  lm:{auto:'Auto',on:'On',off:'Off',blink:'Fast blink',slow:'Slow blink',heartbeat:'Heartbeat'},
  disk:{system:'System (/)',boot:'Boot',images:'Image store'},
@@ -289,7 +289,7 @@ vi:{tabStatus:'Trạng thái',tabStats:'Thống kê',tabSettings:'Cài đặt',d
  usbNone:'Chưa cắm máy',usbHost:'Đã cắm máy tính',usbAvail:'Máy tính đang share Internet',usbInUse:'Đang dùng Internet của máy tính',notConnected:'Chưa kết nối',
  reconnect:'Nối lại 4G',wifiPw:'Mật khẩu Wi-Fi',hotspot:'Hotspot',kbd:'Bàn phím USB',on:'Đang bật',off:'Tắt',locate:'Tìm stick',blink10:'Nháy 10 giây',check:'Kiểm tra',probesNow:'Kiểm tra ngay',
  sshPw:'Mật khẩu SSH',smsPin:'PIN SMS',remote:'Điều khiển',reboot:'Khởi động lại',stick:'Stick',sendSms:'Gửi SMS',viaSim:'Qua SIM trong stick',
- inMsg:'Đến',outMsg:'Đã gửi',failMsg:'Gửi lỗi',noSms:'Chưa có tin nhắn.',free:'Trống',attached:'đang gắn',upload:'Upload image',mkfat:'Ổ FAT trống',create:'Tạo',
+ smsAll:'Tất cả tin nhắn',smsN:'tin',smsFind:'Tìm số hoặc nội dung',inMsg:'Đến',outMsg:'Đã gửi',failMsg:'Gửi lỗi',noSms:'Chưa có tin nhắn.',free:'Trống',attached:'đang gắn',upload:'Upload image',mkfat:'Ổ FAT trống',create:'Tạo',
  eject:'Tháo ổ',ejectSub:'Ngắt khỏi máy',red:'Đỏ',green:'Xanh lá',blue:'Xanh dương',findAll:'Nháy cả 3',images:'Image',emmc:'eMMC',noData:'Chưa có dữ liệu',
  lm:{auto:'Tự động',on:'Bật',off:'Tắt',blink:'Nháy nhanh',slow:'Nháy chậm',heartbeat:'Nhịp tim'},
  disk:{system:'Hệ thống (/)',boot:'Boot',images:'Kho image'},
@@ -312,7 +312,7 @@ zh:{tabStatus:'状态',tabStats:'统计',tabSettings:'设置',dataUsage:'4G 流�
  usbNone:'未连接电脑',usbHost:'已连接电脑',usbAvail:'电脑正在共享网络',usbInUse:'正在使用电脑的网络',notConnected:'未连接',
  reconnect:'重连 4G',wifiPw:'Wi-Fi 密码',hotspot:'热点',kbd:'USB 键盘',on:'已开启',off:'关闭',locate:'查找设备',blink10:'闪烁 10 秒',check:'检测',probesNow:'立即检测',
  sshPw:'SSH 密码',smsPin:'短信 PIN',remote:'远程控制',reboot:'重启',stick:'设备',sendSms:'发送短信',viaSim:'通过设备中的 SIM 卡',
- inMsg:'收到',outMsg:'已发送',failMsg:'发送失败',noSms:'暂无短信。',free:'可用',attached:'已挂载',upload:'上传镜像',mkfat:'空白 FAT 盘',create:'创建',
+ smsAll:'全部短信',smsN:'条',smsFind:'搜索号码或内容',inMsg:'收到',outMsg:'已发送',failMsg:'发送失败',noSms:'暂无短信。',free:'可用',attached:'已挂载',upload:'上传镜像',mkfat:'空白 FAT 盘',create:'创建',
  eject:'弹出',ejectSub:'从电脑断开',red:'红',green:'绿',blue:'蓝',findAll:'三灯同闪',images:'镜像',emmc:'eMMC',noData:'暂无数据',
  lm:{auto:'自动',on:'常亮',off:'关闭',blink:'快闪',slow:'慢闪',heartbeat:'心跳'},
  disk:{system:'系统 (/)',boot:'引导',images:'镜像存储'},
@@ -358,6 +358,8 @@ async function act(a,b){try{const r=await post(a,b);toast(r.error||r.out||t('don
 const dur=s=>{s=+s;const d=Math.floor(s/86400),h=Math.floor(s%86400/3600),m=Math.floor(s%3600/60);return(d?d+t('days')+' ':'')+h+t('hours')+' '+m+t('mins')};
 const gb=m=>m>=1024?(m/1024).toFixed(1)+' GB':m+' MB';
 function set(id,html){const el=$(id);if(el._h!==html){el._h=html;el.innerHTML=html}}
+const fmtTs=s=>{if(!s)return '';const x=new Date(String(s).replace(/([+-]\d\d)$/,'$1:00'));return isNaN(x)?String(s):x.toLocaleString(lang==='zh'?'zh-CN':lang,{dateStyle:'medium',timeStyle:'short'})};
+const smsItem=m=>`<div class="item"><div class="ic">${svg(m.dir==='in'?'msg':m.dir==='out'?'send':'power')}</div><div><b>${esc(m.peer)}</b><small>${m.dir==='in'?t('inMsg'):m.dir==='out'?t('outMsg'):t('failMsg')} · ${esc(fmtTs(m.ts))}</small><p style="white-space:pre-wrap;overflow-wrap:anywhere">${esc(m.text)}</p></div><span></span></div>`;
 const fmtB=b=>b>=1e9?(b/1e9).toFixed(2)+' GB':b>=1e6?(b/1e6).toFixed(1)+' MB':b>=1e3?Math.round(b/1e3)+' KB':(b|0)+' B';
 let TAB='status',URANGE='month',USAGE=null,usageAt=0;
 try{const h=location.hash.slice(1);TAB=['status','stats','settings'].includes(h)?h:(localStorage.getItem('uz-tab')||'status');URANGE=localStorage.getItem('uz-urange')||'month'}catch(e){}
@@ -448,7 +450,8 @@ function render(){
  if(nk&&nk!==window._smsSeen&&document.visibilityState==='visible'&&(s.ui_modules||[]).includes('leds')){window._smsSeen=nk;post('leds-sms-seen').catch(()=>{})}
  set('sms',`<div class="list">
   <button class="tile item" data-focus data-act="compose" style="grid-template-columns:44px 1fr"><div class="ic" style="background:${G.blue}">${svg('send')}</div><div><b>${t('sendSms')}</b><small>${t('viaSim')}</small></div></button>
-  ${sms.slice(0,8).map(m=>`<div class="item"><div class="ic">${svg(m.dir==='in'?'msg':m.dir==='out'?'send':'power')}</div><div><b>${esc(m.peer)}</b><small>${m.dir==='in'?t('inMsg'):m.dir==='out'?t('outMsg'):t('failMsg')} · ${esc(m.ts)}</small><p>${esc(m.text)}</p></div><span></span></div>`).join('')||`<div class="empty">${t('noSms')}</div>`}
+  ${sms.slice(0,5).map(smsItem).join('')||`<div class="empty">${t('noSms')}</div>`}
+  ${sms.length>5?`<button class="tile item" data-focus data-act="smsall" style="grid-template-columns:44px 1fr"><div class="ic">${svg('msg')}</div><div><b>${t('smsAll')}</b><small>${sms.length>=50?'50+':sms.length} ${t('smsN')}</small></div></button>`:''}
  </div>`);
 
  const st=s.storage||{images:[]},at=st.attached;
@@ -556,6 +559,10 @@ const A={
    const b2=$('pr-again');if(b2){b2.disabled=false;b2.textContent=t('again')}};
   $('pr-again').onclick=run;run()},eject:()=>act('img-eject'),
  simrestart:()=>openSheet('red','power',t('simChg'),t('sSimD'),`<div class="actions"><button class="btn red" data-focus data-run="reboot">${t('reboot')}</button>${closeBtn()}</div>`),
+ smsall:async()=>{openSheet('blue','msg',t('messages'),'',`<input class="field" id="smsq" type="search" placeholder="${t('smsFind')}" autocomplete="off"><div class="list" id="smslist" style="max-height:60vh;overflow:auto"><div class="empty">…</div></div><div class="actions">${closeBtn()}</div>`);
+  const r=await post('sms-list',{}),all=r.sms||[],draw=()=>{const q=($('smsq')?.value||'').toLowerCase(),f=q?all.filter(m=>(m.peer+' '+m.text).toLowerCase().includes(q)):all;
+   const el=$('smslist');if(el)el.innerHTML=f.map(smsItem).join('')||`<div class="empty">${t('noSms')}</div>`};
+  draw();const q=$('smsq');if(q)q.oninput=draw},
  reboot:()=>openSheet('red','power',t('sReboot'),t('sRebootD'),`<div class="actions"><button class="btn red" data-focus data-run="reboot">${t('reboot')}</button>${closeBtn()}</div>`),
  passwd:()=>openSheet('pink','lock',t('sshPw'),t('sPw'),`<form id="pwf" autocomplete="off"><input class="field" id="pw" type="password" placeholder="${t('min10')}" autocomplete="new-password"><div class="actions"><button class="btn primary" data-focus type="submit">${t('change')}</button>${closeBtn()}</div></form>`),
  compose:()=>openSheet('blue','send',t('sendSms'),t('sSms'),`<form id="smsf"><input class="field" id="to" placeholder="${t('phone')}" inputmode="tel" autocomplete="off"><textarea class="field" id="txt" rows="3" placeholder="${t('text')}"></textarea><div class="actions"><button class="btn primary" data-focus type="submit">${t('send')}</button>${closeBtn()}</div></form>`),

@@ -475,6 +475,12 @@ def action(a, body):
         os.replace('/etc/uz/sms.pin.tmp', '/etc/uz/sms.pin')
         return {'out': 'SMS PIN updated'}
     if a == 'sms-pin': return {'out': 'PIN: ' + (rd('/etc/uz/sms.pin') or 'not set')}
+    if a == 'sms-list':                     # the whole log (uz-sms keeps the last 200), newest first
+        out = []
+        for l in rd('/var/lib/uz/sms.jsonl').splitlines():
+            try: out.append(json.loads(l))
+            except ValueError: pass
+        return {'out': 'ok', 'sms': out[::-1]}
     if a == 'sms':
         to, text = str(body.get('to', '')).strip(), str(body.get('text', '')).strip()
         if not re.fullmatch(r'\+?\d{3,15}', to) or not text or len(text) > 600: return {'error': 'invalid number or text'}

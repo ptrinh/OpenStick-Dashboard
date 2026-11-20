@@ -37,10 +37,13 @@ class MM:
             idx = path.rsplit('/', 1)[1]
             m = self.kv('-s', idx)
             g = lambda k: (m.get(k) or [''])[0]
-            if g('sms.properties.state') != 'received' and g('sms.properties.pdu-type') not in ('deliver', 'cdma-deliver'): continue
+            # only complete incoming messages ('receiving' = multipart still arriving; outgoing ones are ours)
+            if g('sms.properties.state') != 'received' or g('sms.properties.pdu-type') not in ('deliver', 'cdma-deliver', ''): continue
             text, sender, ts = g('sms.content.text'), g('sms.content.number'), g('sms.properties.timestamp')
+            # MM sometimes fails to delete ("Couldn't delete 1 parts"): the message then comes back on every
+            # poll, so dedupe by content and keep retrying the delete quietly.
             self.run('-m', 'any', f'--messaging-delete-sms={idx}')
-            on_sms(self, sender, text, ts)
+            handle_sms(self, sender, text, ts)
     def send(self, num, text):
         text = text.replace("'", "’").replace('\\', '/')
         rc, out = self.run('-m', 'any', f"--messaging-create-sms=number='{num}',text='{text}'")
@@ -101,9 +104,32 @@ def poll(p):
                 body.append(lines[i]); i += 1
             text = ucs2(''.join(body).strip()) if len(body) == 1 else '\n'.join(ucs2(b) for b in body).strip()
             p.cmd(f'AT+CMGD={idx}')
-            on_sms(p, sender, text, ts)
+            handle_sms(p, sender, text, ts)
             continue
         i += 1
+
+# --- de-duplication: a message the modem failed to delete is listed again on the next poll (and after a
+# restart); handle each (sender, timestamp, text) once. Keys are hashed, kept 7 days in /var/lib/uz/sms.seen.
+SEEN = '/var/lib/uz/sms.seen'
+def _seen_load():
+    try: return {k: float(t) for k, t in (l.split() for l in open(SEEN) if len(l.split()) == 2)}
+    except OSError: return {}
+_SEEN = None
+def handle_sms(p, sender, text, ts):
+    global _SEEN
+    import hashlib
+    if _SEEN is None: _SEEN = _seen_load()
+    now = time.time()
+    key = hashlib.sha256(f'{sender}\0{ts}\0{text}'.encode()).hexdigest()[:24]
+    if key in _SEEN: return False
+    _SEEN = {k: t for k, t in _SEEN.items() if now - t < 7 * 86400}; _SEEN[key] = now
+    try:
+        fd = os.open(SEEN + '.tmp', os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, 'w') as f: f.write(''.join(f'{k} {int(t)}\n' for k, t in list(_SEEN.items())[-500:]))
+        os.replace(SEEN + '.tmp', SEEN)
+    except OSError: pass
+    on_sms(p, sender, text, ts)
+    return True
 
 # --- SMS remote control: "<PIN> <command>" (PIN in /etc/uz/sms.pin; optional allow-list /etc/uz/sms.allow)
 FAILS = []
@@ -161,7 +187,7 @@ OUTBOX = '/var/lib/uz/outbox'
 def logsms(d, peer, text, ts=''):
     try:
         old = open(LOG).read().splitlines()[-199:] if os.path.exists(LOG) else []
-        old.append(json.dumps({'dir': d, 'peer': peer, 'text': text, 'ts': ts or time.strftime('%y/%m/%d %H:%M:%S')}, ensure_ascii=False))
+        old.append(json.dumps({'dir': d, 'peer': peer, 'text': text, 'ts': ts or time.strftime('%Y-%m-%dT%H:%M:%S%z')}, ensure_ascii=False))
         fd = os.open(LOG + '.tmp', os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         with os.fdopen(fd, 'w') as f: f.write('\n'.join(old) + '\n')
         os.replace(LOG + '.tmp', LOG)
