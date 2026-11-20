@@ -27,7 +27,7 @@ A tvOS-style web dashboard and a set of small services that turn a cheap **MSM89
 
 ## Security model
 
-* `uz-web` listens on `:8080`. Requests that come through **`tailscale serve`** must carry the `Tailscale-User-Login` of the node's owner.
+* `uz-web` listens on port 80. Requests that come through **`tailscale serve`** must carry the `Tailscale-User-Login` of the node's owner.
 * **Direct local-IP access is only allowed while the stick is not paired** with any Tailscale account (first setup / after "Pair with another account"). It also requires a private source address and an IP-literal `Host` header (blocks DNS rebinding). Anyone on that LAN can use the dashboard during that window — pair before joining untrusted networks.
 * State-changing requests need `X-UZ: 1` and `Sec-Fetch-Site: same-origin` (CSRF).
 * **Passkeys** (WebAuthn, ES256 / EdDSA / RS256, user verification required, attestation `none`) are bound to the tailnet hostname. With at least one passkey, every API except the sign-in ceremony returns `401` without a session cookie (`HttpOnly; Secure; SameSite=Strict`, 24 h). Passkeys need HTTPS, so on a local IP a passkey-protected stick only offers Tailscale re-pairing. "Pair with another account" deletes passkeys (they cannot work on a new hostname). Recovery: `uz-passkey reset` over Tailscale SSH or USB.
@@ -56,6 +56,16 @@ tools/
 
 ## Install
 
+### First access (no Tailscale yet)
+
+While the stick is not paired with Tailscale, the dashboard is open on its local addresses (port 80, plain HTTP):
+
+| Link | Address |
+|---|---|
+| Default `Openstick` hotspot (customized image) | `http://192.168.4.1` |
+| USB cable (OpenStick) | `http://192.168.5.1` |
+| Same Wi-Fi as the stick | `http://<the stick's IP from your router>` |
+
 ### On a stick that already runs OpenStick Debian or postmarketOS
 
 1. Get the stick on the Internet (Wi-Fi: `nmcli dev wifi connect <SSID> --ask`) and install Tailscale; `tailscale up --ssh`.
@@ -65,7 +75,7 @@ tools/
    ```
    On Debian this also installs `qrencode` and `python3-cryptography`. Without Tailscale yet, use the USB link
    (`192.168.5.1` on OpenStick, `172.16.42.1` on pmOS): `UZ_VIA=usb UZ_PASSWORD_FILE=~/.config/uz801/password tools/deploy.sh setup`.
-3. Open `https://<stick-name>.<tailnet>.ts.net` (the setup runs `tailscale serve --bg 8080`).
+3. Open `https://<stick-name>.<tailnet>.ts.net` (the setup runs `tailscale serve --bg 80`).
 
 ### Baking it into an OpenStick image before flashing
 
@@ -75,7 +85,7 @@ On an arm64 Linux machine (a VM is fine), loop-mount the rootfs partition of ope
 sudo tools/customize-openstick-image.sh /mnt/os ./new-user-password [carried-state.tgz]
 ```
 
-It installs Python, Tailscale, `qrencode` and the dashboard, sets a real password for `user` (the image ships with `1`), locks root's password, **deletes the SSH host keys baked into the public image** (regenerated on first boot), clears `machine-id`, and stops the default `Openstick` hotspot (well-known password) from auto-starting. Inject your stick's own calibration partitions (`modemst1/2`, `fsg`, `fsc`, `persist`, `sec`, `modem`) into the image before flashing — never another device's.
+It installs Python, Tailscale, `qrencode` and the dashboard, sets a real password for `user` (the image ships with `1`), locks root's password, **deletes the SSH host keys baked into the public image** (regenerated on first boot), clears `machine-id`, and keeps the image's default `Openstick` hotspot so a new stick can be set up without a cable: join it and open `http://192.168.4.1`. Its password is the image's well-known default — pair the stick with Tailscale and join your Wi-Fi soon; once the stick is a Wi-Fi client, `uz-web` stops that hotspot from auto-starting. Inject your stick's own calibration partitions (`modemst1/2`, `fsg`, `fsc`, `persist`, `sec`, `modem`) into the image before flashing — never another device's.
 
 ### Telegram (optional)
 

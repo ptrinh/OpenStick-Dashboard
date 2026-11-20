@@ -49,6 +49,6 @@ grep -q '^UZ_NET_MODE=' /etc/uz/uz.conf || echo 'UZ_NET_MODE="allowed: 3g, 4g; p
 systemctl enable uz-usbnet.service; /usr/local/bin/uz-usbnet || true
 # pick up new code in long-running services
 for u in uz-web uz-sms uz-gps uz-led uz-calls; do systemctl is-active -q $u && systemctl restart $u; done; true
-tailscale status >/dev/null 2>&1 && tailscale serve --bg 8080 >/dev/null 2>&1 || echo "NOTE: run tailscale up, then: tailscale serve --bg 8080"
+tailscale status >/dev/null 2>&1 && tailscale serve --bg 80 >/dev/null 2>&1 || echo "NOTE: run tailscale up, then: tailscale serve --bg 80"
 systemctl restart uz-sms.service || true
 echo "== done"

@@ -1,5 +1,5 @@
 [Unit]
-Description=UZ801 dashboard (:8080 via tailscale serve; local IPs only while unpaired)
+Description=UZ801 dashboard (:80, and via tailscale serve; local IPs only while unpaired)
 After=network.target tailscaled.service
 [Service]
 ExecStart=/usr/local/bin/uz-web

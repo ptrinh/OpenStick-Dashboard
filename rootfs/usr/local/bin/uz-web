@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""UZ801 dashboard. Listens on 127.0.0.1:8080; exposed only through `tailscale serve`
+"""UZ801 dashboard. Listens on :80; exposed only through `tailscale serve`
 (HTTPS on the tailnet). Every request must carry Tailscale-User-Login equal to the
 stick owner's login (taken from `tailscale status --json`); POSTs must be same-origin.
 UZ_WEB_DEV=1 disables auth for local testing only."""
@@ -12,7 +12,7 @@ except Exception:
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 DEV = os.environ.get('UZ_WEB_DEV') == '1'
-PORT = int(os.environ.get('UZ_WEB_PORT', '8080'))
+PORT = int(os.environ.get('UZ_WEB_PORT', '80'))
 Q = 'qmicli -d /dev/wwan0qmi0 --device-open-proxy'
 cache, owner = {}, {'login': None, 't': 0}
 
@@ -67,7 +67,7 @@ def local_urls():
     out = []
     for dev in ('wlan0', 'usb0'):
         for ip in sh(f"ip -4 -o addr show {dev} 2>/dev/null | awk '{{print $4}}' | cut -d/ -f1", 5).split():
-            out.append(f'http://{ip}:{PORT}')
+            out.append(f'http://{ip}' + ('' if PORT == 80 else f':{PORT}'))
     return out
 
 MM = subprocess.run('command -v mmcli >/dev/null && systemctl is-enabled -q ModemManager', shell=True).returncode == 0
@@ -137,8 +137,12 @@ def net_loop():
         else: usb['sharing'] = (cache.get('net') or {}).get('usb', {}).get('sharing', 'none') if usb['link'] else 'none'
         n['usb'] = usb
         cache['net'] = n
-        if ts_info(True).get('state') == 'Running' and ':8080' not in sh('tailscale serve status 2>&1', 8) and '127.0.0.1:8080' not in sh('tailscale serve status 2>&1', 8):
-            sh('tailscale serve --bg 8080', 15)
+        if ts_info(True).get('state') == 'Running' and not re.search(rf'127\.0\.0\.1:{PORT}(?!\d)', sh('tailscale serve status 2>&1', 8)):
+            sh(f'tailscale serve --bg {PORT}', 15)
+        # The stock OpenStick 'hotspot' profile (autoconnect, priority 100) is how a new stick is first reached.
+        # Once wlan0 is a Wi-Fi client, stop it from auto-starting, or it would take the radio back on reboot.
+        if n.get('wifi_mode') == 'infrastructure' and nm_get('connection.autoconnect', 'connection', 'show', 'hotspot') == 'yes':
+            sh('nmcli connection modify hotspot connection.autoconnect no', 10)
         time.sleep(30)
 
 def slow_loop():
@@ -506,7 +510,10 @@ class H(BaseHTTPRequestHandler):
         except ValueError: return None
         return None if paired() else 'local'
 
-    def host(self): return (self.headers.get('Host') or '').rsplit(':', 1)[0].strip('[]').lower()
+    def host(self):
+        h = (self.headers.get('Host') or '').strip().lower()
+        if h.startswith('['): return h[1:h.find(']')] if ']' in h else ''
+        return h.rsplit(':', 1)[0] if h.count(':') == 1 else h
     def cookie(self):
         for part in (self.headers.get('Cookie') or '').split(';'):
             k, _, v = part.strip().partition('=')

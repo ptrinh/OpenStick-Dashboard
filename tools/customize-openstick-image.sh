@@ -32,8 +32,8 @@ chmod 600 $R/etc/NetworkManager/system-connections/*.nmconnection 2>/dev/null ||
 chmod 600 $R/etc/uz/hotspot.psk $R/etc/uz/sms.pin; chown -R root:root $R/etc/uz $R/var/lib/tailscale 2>/dev/null || true
 sed -i 's/^UZ_MODE=.*/UZ_MODE=home/' $R/etc/uz/uz.conf
 grep -q UZ_BACKEND $R/etc/uz/uz.conf || printf 'UZ_BACKEND=auto\nUZ_USBNET=auto\n' >> $R/etc/uz/uz.conf
-# default 'Openstick' hotspot (shared, well-known password, autoconnect prio 100) -> never auto-start
-sed -i 's/^autoconnect-priority=.*/autoconnect=false/' $R/etc/NetworkManager/system-connections/hotspot.nmconnection
+# The stock 'Openstick' hotspot (192.168.4.1, the image's default password) stays on so a new stick can be reached
+# at http://192.168.4.1 without a cable. uz-web turns its autoconnect off once wlan0 has joined a Wi-Fi network.
 echo "== services"
 chroot $R systemctl enable tailscaled.service uz-probe.timer uz-sms.service uz-mode.service uz-web.service uz-led.service uz-gps.service uz-zram.service >/dev/null 2>&1
 chroot $R systemctl disable dnsmasq.service getty@tty1.service hostapd.service >/dev/null 2>&1 || true
