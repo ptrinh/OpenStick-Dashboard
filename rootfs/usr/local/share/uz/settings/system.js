@@ -6,7 +6,7 @@ const T = {
   host: 'Hostname', hostPh: 'e.g. uz801', save: 'Save',
   hostWarn: 'Changes the Linux hostname only. The Tailscale name ({ts}) is pinned first, so this dashboard\'s HTTPS address and passkeys stay the same.',
   hostBad: 'Use 1–63 characters a–z, 0–9 and -, not starting or ending with -.',
-  tz: 'Time zone', tzPh: 'Search, e.g. Asia/Singapore', tzBad: 'Pick a time zone from the list.',
+  tz: 'Time zone', tzMine: 'Use this device', tzPh: 'Search, e.g. Asia/Singapore', tzBad: 'Pick a time zone from the list.',
   upd: 'Updates', pinned: 'Pinned to Debian 13 (trixie)', notPinned: 'Follows “stable”',
   pinWarn: 'Your apt sources follow “stable”. When Debian 14 is released, “stable” will point to it and a normal upgrade would pull a whole new release onto this custom kernel, which can leave the stick unbootable. Pin to “trixie” (Debian 13) to keep getting its security and bug-fix updates only. A .bak copy of each changed file is kept.',
   pinBtn: 'Pin to trixie', noDebian: 'No Debian apt sources found.', apk: 'Updates from the dashboard are not supported on postmarketOS (apk) yet.',
@@ -29,7 +29,7 @@ const T = {
   host: 'Tên máy', hostPh: 'vd. uz801', save: 'Lưu',
   hostWarn: 'Chỉ đổi hostname của Linux. Tên Tailscale ({ts}) được chốt cố định trước, nên địa chỉ HTTPS của dashboard và passkey không đổi.',
   hostBad: 'Dùng 1–63 ký tự a–z, 0–9 và -, không bắt đầu hay kết thúc bằng -.',
-  tz: 'Múi giờ', tzPh: 'Tìm, vd. Asia/Ho_Chi_Minh', tzBad: 'Hãy chọn múi giờ trong danh sách.',
+  tz: 'Múi giờ', tzMine: 'Dùng múi giờ máy này', tzPh: 'Tìm, vd. Asia/Ho_Chi_Minh', tzBad: 'Hãy chọn múi giờ trong danh sách.',
   upd: 'Cập nhật', pinned: 'Đã ghim Debian 13 (trixie)', notPinned: 'Đang theo “stable”',
   pinWarn: 'Nguồn apt đang theo “stable”. Khi Debian 14 phát hành, “stable” sẽ trỏ sang bản đó và một lần nâng cấp bình thường sẽ kéo cả bản phát hành mới lên kernel tuỳ biến này, có thể khiến thiết bị không khởi động được. Ghim về “trixie” (Debian 13) để chỉ nhận bản vá bảo mật và sửa lỗi. Mỗi tệp bị sửa đều được giữ bản .bak.',
   pinBtn: 'Ghim trixie', noDebian: 'Không thấy nguồn apt Debian.', apk: 'Chưa hỗ trợ cập nhật từ bảng điều khiển trên postmarketOS (apk).',
@@ -52,7 +52,7 @@ const T = {
   host: '主机名', hostPh: '例如 uz801', save: '保存',
   hostWarn: '仅修改 Linux 主机名。会先固定 Tailscale 名称（{ts}），因此控制台的 HTTPS 地址和通行密钥保持不变。',
   hostBad: '使用 1–63 个字符：a–z、0–9 和 -，不能以 - 开头或结尾。',
-  tz: '时区', tzPh: '搜索，例如 Asia/Shanghai', tzBad: '请从列表中选择时区。',
+  tz: '时区', tzMine: '使用本机时区', tzPh: '搜索，例如 Asia/Shanghai', tzBad: '请从列表中选择时区。',
   upd: '更新', pinned: '已锁定 Debian 13 (trixie)', notPinned: '跟随 “stable”',
   pinWarn: 'apt 源当前跟随 “stable”。Debian 14 发布后，“stable” 会指向它，一次普通升级就会把整个新版本装到这个定制内核上，可能导致设备无法启动。锁定到 “trixie”（Debian 13）后只接收安全和错误修复更新。每个被修改的文件都会保留 .bak 备份。',
   pinBtn: '锁定 trixie', noDebian: '未找到 Debian apt 源。', apk: '暂不支持在 postmarketOS (apk) 上从面板更新。',
@@ -109,8 +109,10 @@ function hostHtml() {
 }
 
 function tzHtml() {
-  return `${H3(t('tz'))}<form id="sys-tf" autocomplete="off"><input class="field" id="sys-tz" list="sys-tzl" value="${E(D.tz || '')}" placeholder="${E(t('tzPh'))}" spellcheck="false" autocapitalize="off">
-    <datalist id="sys-tzl"></datalist><div class="actions" style="margin-top:0"><button class="btn sm primary" data-focus type="submit">${E(t('save'))}</button></div></form>`;
+  const mine = browserTz();
+  return `${H3(t('tz'))}<form id="sys-tf" autocomplete="off"><select class="field" id="sys-tz" data-focus style="color-scheme:dark;appearance:auto"><option>${E(D.tz || '')}</option></select>
+    <div class="actions" style="margin-top:0"><button class="btn sm primary" data-focus type="submit">${E(t('save'))}</button>
+    ${mine && mine !== D.tz ? `<button class="btn sm" data-focus type="button" id="sys-tzme">${E(t('tzMine'))}: ${E(mine)}</button>` : ''}</div></form>`;
 }
 
 function updHtml() {
@@ -180,9 +182,16 @@ async function tick() {
   }
 }
 
+function browserTz() { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch (e) { return ''; } }
+
 async function loadZones() {
   if (!zones) { const r = await UZ.post('sys-timezones', {}); zones = r.zones || []; }
-  const dl = UZ.$('#sys-tzl'); if (dl) dl.innerHTML = zones.map(z => `<option value="${E(z)}">`).join('');
+  const sel = UZ.$('#sys-tz'); if (!sel || !zones.length) return;
+  const cur = D.tz || 'Etc/UTC', groups = {};
+  zones.forEach(z => { const g = z.includes('/') ? z.split('/')[0] : 'Other'; (groups[g] = groups[g] || []).push(z); });
+  sel.innerHTML = (zones.includes(cur) ? '' : `<option value="${E(cur)}" selected>${E(cur)}</option>`) +
+    Object.keys(groups).sort().map(g => `<optgroup label="${E(g)}">${groups[g].map(z =>
+      `<option value="${E(z)}"${z === cur ? ' selected' : ''}>${E(z.includes('/') ? z.slice(g.length + 1).replace(/_/g, ' ') : z)}</option>`).join('')}</optgroup>`).join('');
 }
 
 async function act(name, body) {
@@ -203,6 +212,9 @@ function bind() {
     if (zones && zones.length && !zones.includes(v)) { UZ.toast(t('tzBad')); return; }
     const r = await act('sys-timezone-set', {tz: v}); if (!r.error) { D.tz = r.tz; UZ.reload(); }
   };
+  const me = UZ.$('#sys-tzme');
+  if (me) me.onclick = () => { const z = browserTz(), sel = UZ.$('#sys-tz');
+    if (zones && zones.includes(z)) { sel.value = z; UZ.$('#sys-tf').requestSubmit(); } else UZ.toast(t('tzBad')); };
   root.onclick = async e => {
     const rb = e.target.closest('[data-rb]'), day = e.target.closest('[data-day]'), b = e.target.closest('[data-sys]');
     if (rb) { UZ.$$('[data-rb]').forEach(x => x.classList.toggle('on', x === rb)); UZ.$('#sys-rbx').hidden = rb.dataset.rb !== 'on'; return; }
