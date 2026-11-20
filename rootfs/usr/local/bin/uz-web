@@ -85,11 +85,15 @@ def mm_radio():
     num = lambda v: '' if v in ('', '--') else v.split()[0]
     has_sim = m.get('modem.generic.sim', '--') != '--'
     sim_restart = sim_needs_restart(has_sim)
+    # bam-dmux leaves the kernel's wwan0 counters at 0: use ModemManager's bearer stats (since it started).
+    bp = m.get('modem.generic.bearers.value[1]', '')
+    bs = kv('-b', bp) if bp.startswith('/org/') else {}
+    mb = lambda k: round(int(bs[k]) / 1e6, 1) if bs.get(k, '').isdigit() else None
     return {'rssi': num(sg.get('modem.signal.lte.rssi', '')), 'rsrp': num(sg.get('modem.signal.lte.rsrp', '')),
             'snr': num(sg.get('modem.signal.lte.snr', '')), 'net': m.get('modem.generic.access-technologies.value[1]', m.get('modem.generic.access-technologies', '')),
             'reg': m.get('modem.3gpp.registration-state', m.get('modem.generic.state', '')) if m.get('modem.generic.sim', '--') != '--' else 'no SIM',
             'operator': m.get('modem.3gpp.operator-name', ''), 'plmn': m.get('modem.3gpp.operator-code', ''),
-            'sim_restart': sim_restart}
+            'sim_restart': sim_restart, 'rx_mb': mb('bearer.stats.total-bytes-rx'), 'tx_mb': mb('bearer.stats.total-bytes-tx')}
 
 def sim_needs_restart(has_sim):
     """The modem reads the SIM only at power-up: a hot-swapped/hot-inserted SIM keeps the old identity
