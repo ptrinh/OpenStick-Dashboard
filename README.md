@@ -46,6 +46,7 @@ rootfs/                     files copied to / on the stick
   etc/uz/uz.conf             settings (role, backend, exit node…)
   usr/local/lib/uz/settings/  settings modules (server side) — see docs/settings-modules.md
   usr/local/share/uz/settings/ settings modules (UI)
+install.sh                   runs on the stick: installs packages + Tailscale, then tools/stick-setup.sh
 tools/
   stick-setup.sh             runs on the stick: installs files, enables services (idempotent)
   deploy.sh                  from your computer: setup | ssh | root | push (Tailscale SSH, or USB + password)
@@ -54,42 +55,113 @@ tools/
   pty-auth.py                answers password prompts for the USB/SSH fallback
 ```
 
-## Install
+## Setup guide (from a stock stick to the dashboard)
 
-### First access (no Tailscale yet)
+Budget about 45 minutes. You need the stick, a computer (macOS, Linux or Windows) with a USB port, a free
+[Tailscale](https://tailscale.com) account, and optionally a SIM card with data.
 
-While the stick is not paired with Tailscale, the dashboard is open on its local addresses (port 80, plain HTTP):
+> ⚠️ Flashing replaces the stick's Android firmware. Keep the backup the installer makes (step 2): it holds your
+> stick's own modem calibration (IMEI, RF tuning). It is unique to your device — never share it or use another stick's.
 
-| Link | Address |
-|---|---|
-| Default `Openstick` hotspot (customized image) | `http://192.168.4.1` |
-| USB cable (OpenStick) | `http://192.168.5.1` |
-| Same Wi-Fi as the stick | `http://<the stick's IP from your router>` |
+### 1. Check your board
 
-### On a stick that already runs OpenStick Debian or postmarketOS
+Supported by the OpenStick installer: **UZ801** (v3.x), **HMUF02**, **HM-MIFIB** — see
+[openstick.org](https://openstick.org/getting-started/firmware-downloads/) for the current list and how to identify
+your board. This dashboard is tested on a UZ801 (modem firmware `UZ801_V3.3`).
 
-1. Get the stick on the Internet (Wi-Fi: `nmcli dev wifi connect <SSID> --ask`) and install Tailscale; `tailscale up --ssh`.
-2. From your computer (with Tailscale):
-   ```sh
-   UZ_TS_HOST=<stick-name> tools/deploy.sh setup
-   ```
-   On Debian this also installs `qrencode` and `python3-cryptography`. Without Tailscale yet, use the USB link
-   (`192.168.5.1` on OpenStick, `172.16.42.1` on pmOS): `UZ_VIA=usb UZ_PASSWORD_FILE=~/.config/uz801/password tools/deploy.sh setup`.
-3. Open `https://<stick-name>.<tailnet>.ts.net` (the setup runs `tailscale serve --bg 80`).
+### 2. Flash OpenStick Debian (official 1-Click installer)
 
-### Baking it into an OpenStick image before flashing
+Follow [openstick.org's UZ801 guide](https://openstick.org/boards/uz801/flashing/); in short:
 
-On an arm64 Linux machine (a VM is fine), loop-mount the rootfs partition of openstick.org's `full_emmc.bin` and run
+1. Plug the stick in, join its stock Wi-Fi and open `http://192.168.100.1/usbdebug.html` (some builds:
+   `usbdebug.htm`) to enable ADB.
+2. Download [openstick-installer](https://github.com/Basistiy/openstick-installer) (zip, or
+   `git clone https://github.com/Basistiy/openstick-installer.git`) and start it: `./run.sh` on Linux,
+   `run.command` on macOS, `run.bat` on Windows. It sets up its own Python environment and tools (`edl`, …).
+3. Choose your board (`1` = UZ801), answer **`Y`** to the backup, then **Install Linux (Debian)**.
+   The installer dumps the whole eMMC to `backups/…/full_emmc.bin`, extracts the calibration partitions,
+   writes them into the Debian image and flashes it. It takes about 15 minutes.
+4. **Copy the `backups/` folder somewhere safe.**
+
+Windows: if the stick shows up as an unknown 9008 device, bind WinUSB to it with Zadig. If it gets stuck, unplug it,
+hold the reset button and plug it back in (EDL mode) — details in the installer's README.
+
+### 3. First login and basic hardening
+
+After the reboot the stick comes up with the image's defaults (from the installer's README): hotspot **`Openstick`**
+(password `openstick`, stick at `192.168.4.1`), USB network `192.168.5.1`, SSH user **`user`**, password **`1`**.
+These are public, so change them first:
+
+```sh
+ssh user@192.168.5.1          # or ssh user@192.168.4.1 over the Openstick hotspot
+passwd                        # new password for `user`
+sudo rm /etc/ssh/ssh_host_* && sudo ssh-keygen -A && sudo systemctl restart ssh   # unique host keys (the image ships shared ones)
+```
+
+Your SSH client will then warn that the host key changed — expected; remove the old entry
+(`ssh-keygen -R 192.168.5.1`) and reconnect.
+
+### 4. Get the stick online
+
+Either insert a SIM (then **restart the stick** — the modem only reads the SIM at power-up), or join a Wi-Fi network:
+
+```sh
+sudo nmcli dev wifi connect "<your Wi-Fi>" --ask
+```
+
+Joining Wi-Fi turns the `Openstick` hotspot off (one radio), so reconnect over USB, or to the stick's new IP on
+your Wi-Fi.
+
+### 5. Install the dashboard
+
+On the stick:
+
+```sh
+curl -fsSL https://github.com/ptrinh/OpenStick-Dashboard/archive/refs/heads/main.tar.gz | tar -xz
+cd OpenStick-Dashboard-main && sudo sh install.sh
+```
+
+`install.sh` installs Python, `qrencode`, `python3-cryptography` and Tailscale (from pkgs.tailscale.com), copies
+the dashboard and its services, and prints the addresses to open. Re-run it to update; settings in `/etc/uz` are kept.
+
+*From your computer instead:* clone this repo and run `UZ_VIA=usb UZ_PASSWORD_FILE=<file holding the stick password> tools/deploy.sh setup`
+(zsh; needs the packages above already on the stick).
+
+### 6. Open the dashboard and pair Tailscale
+
+1. Open `http://192.168.5.1` (USB) or `http://<the stick's IP>` (same Wi-Fi) — plain HTTP, no port.
+   While the stick is not paired with Tailscale this works from the local network; anyone on that network can use it,
+   so do the next step right away.
+2. On the **Status** tab open the **Tailscale** card → **Sign in to Tailscale**: scan the QR code or open the link and approve the stick in
+   your tailnet.
+3. From now on use **`https://<stick-name>.<your-tailnet>.ts.net`** (HTTPS from `tailscale serve`). Local-IP access
+   closes automatically once the stick is paired.
+
+### 7. Finish in Settings
+
+* **Security → Passkeys**: add a passkey; afterwards the dashboard requires it.
+* **Messaging → Notifications**: save a bot token from @BotFather, press **Detect chat**, then send `/start` to your bot within 20 seconds.
+* **Network → Cellular** (APN, roaming, SIM PIN) and **Data plan** (billing day, monthly cap).
+* **Device → System**: time zone, pin apt to `trixie`, install updates.
+
+### Advanced: bake the dashboard into the image before flashing
+
+On an arm64 Linux machine (a VM is fine), loop-mount the rootfs partition of the installer's `full_emmc.bin` and run
 
 ```sh
 sudo tools/customize-openstick-image.sh /mnt/os ./new-user-password [carried-state.tgz]
 ```
 
-It installs Python, Tailscale, `qrencode` and the dashboard, sets a real password for `user` (the image ships with `1`), locks root's password, **deletes the SSH host keys baked into the public image** (regenerated on first boot), clears `machine-id`, and keeps the image's default `Openstick` hotspot so a new stick can be set up without a cable: join it and open `http://192.168.4.1`. Its password is the image's well-known default — pair the stick with Tailscale and join your Wi-Fi soon; once the stick is a Wi-Fi client, `uz-web` stops that hotspot from auto-starting. Inject your stick's own calibration partitions (`modemst1/2`, `fsg`, `fsc`, `persist`, `sec`, `modem`) into the image before flashing — never another device's.
+It installs Python, Tailscale, `qrencode` and the dashboard, sets the password for `user`, locks root's password,
+deletes the image's shared SSH host keys (regenerated on first boot) and clears `machine-id`. The `Openstick` hotspot
+stays on for cable-free setup at `http://192.168.4.1`; once the stick joins a Wi-Fi network `uz-web` stops it from
+auto-starting. Inject your stick's own calibration partitions (`modemst1/2`, `fsg`, `fsc`, `persist`, `sec`, `modem`)
+into the image before flashing — never another device's.
 
-### Telegram (optional)
+### postmarketOS
 
-Create a bot with @BotFather, send it `/start`, then `UZ801_TG_TOKEN=<token> tools/telegram-setup.sh`.
+The services also run on postmarketOS with the `qmicli` backend: get the stick on the network, then from your
+computer run `UZ_VIA=usb UZ_PASSWORD_FILE=<file> tools/deploy.sh setup` (USB address `172.16.42.1`).
 
 ## Notes and gotchas
 
