@@ -83,10 +83,24 @@ def mm_radio():
     if not cache.get('mm_sig'): sh('mmcli -m any --signal-setup=30', 10); cache['mm_sig'] = 1
     sg = kv('-m any --signal-get')
     num = lambda v: '' if v in ('', '--') else v.split()[0]
+    has_sim = m.get('modem.generic.sim', '--') != '--'
+    sim_restart = sim_needs_restart(has_sim)
     return {'rssi': num(sg.get('modem.signal.lte.rssi', '')), 'rsrp': num(sg.get('modem.signal.lte.rsrp', '')),
             'snr': num(sg.get('modem.signal.lte.snr', '')), 'net': m.get('modem.generic.access-technologies.value[1]', m.get('modem.generic.access-technologies', '')),
             'reg': m.get('modem.3gpp.registration-state', m.get('modem.generic.state', '')) if m.get('modem.generic.sim', '--') != '--' else 'no SIM',
-            'operator': m.get('modem.3gpp.operator-name', ''), 'plmn': m.get('modem.3gpp.operator-code', '')}
+            'operator': m.get('modem.3gpp.operator-name', ''), 'plmn': m.get('modem.3gpp.operator-code', ''),
+            'sim_restart': sim_restart}
+
+def sim_needs_restart(has_sim):
+    """The modem reads the SIM only at power-up: a hot-swapped/hot-inserted SIM keeps the old identity
+    (or none) and the modem logs UimUninitialized until the stick restarts."""
+    up = float(rd('/proc/uptime', '0').split()[0])
+    if cache.get('sim_prev') is False and has_sim and up > 120: cache['sim_hot'] = True   # inserted while running
+    cache['sim_prev'] = has_sim
+    if cache.get('sim_hot'): return True
+    if up < 180 or not has_sim: return False
+    n = sh('journalctl -u ModemManager --since -2min -q --no-pager -g UimUninitialized 2>/dev/null | wc -l', 8)
+    return n.isdigit() and int(n) >= 5
 
 def nm_get(*a):
     try: return subprocess.run(['nmcli', '-g', *a], capture_output=True, text=True, timeout=10).stdout.strip()
